@@ -1,5 +1,3 @@
-name: Build POS7 258 APK
-
 on:
   workflow_dispatch:
   push:
@@ -25,10 +23,12 @@ jobs:
           java-version: '17'
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@4
         with:
           gradle-version: '8.9'
 
