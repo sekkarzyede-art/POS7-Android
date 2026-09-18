@@ -1,3 +1,5 @@
+name: Build POS7 258 APK
+
 on:
   workflow_dispatch:
   push:
@@ -33,11 +35,11 @@ jobs:
           gradle-version: '8.9'
 
       - name: Build APK
-        working-directory: POS7_Android_258
+        working-directory: POS7_Android_168_MySQL
         run: gradle assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: POS7-258-APK
-          path: POS7_Android_258/app/build/outputs/apk/debug/app-debug.apk
+          path: POS7_Android_168_MySQL/app/build/outputs/apk/debug/app-debug.apk
