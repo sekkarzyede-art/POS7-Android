@@ -1,22 +1,19 @@
-name: Build POS7 258 APK
+name: Build POS7 v451 Fresh APK
 
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
+    branches: [ main ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Unzip POS7 258 project
-        run: |
-          unzip POS7_Android_258_Source-2.zip
+      - name: Extract v451 Android project
+        run: unzip -q POS7_v451_Android_Project.zip -d pos7_v451_android
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -27,19 +24,18 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
         with:
-          packages: 'platform-tools'
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Build APK
-        working-directory: POS7_Android_168_MySQL
-        run: gradle assembleDebug
+      - name: Build debug APK
+        run: gradle --no-daemon -p pos7_v451_android assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: POS7-258-APK
-          path: POS7_Android_168_MySQL/app/build/outputs/apk/debug/app-debug.apk
+          name: POS7-v451-fresh-debug-apk
+          path: pos7_v451_android/app/build/outputs/apk/debug/app-debug.apk
