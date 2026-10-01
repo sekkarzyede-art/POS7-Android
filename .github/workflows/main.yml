@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: تنزيل ملفات المشروع
+      - name: تنزيل ملفات المستودع
         uses: actions/checkout@v4
 
       - name: إعداد Java
@@ -25,12 +25,42 @@ jobs:
         with:
           gradle-version: "8.9"
 
+      - name: فك مشروع v459
+        shell: bash
+        run: |
+          ZIP_FILE=""
+          for file in ./*v459*.zip; do
+            [ -f "$file" ] || continue
+            if unzip -Z1 "$file" | grep -Eq '(^|/)settings\.gradle(\.kts)?$'; then
+              ZIP_FILE="$file"
+              break
+            fi
+          done
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "::error::لم أجد ملف ZIP لمشروع v459 في جذر المستودع."
+            exit 1
+          fi
+
+          mkdir -p pos7_project
+          unzip -oq "$ZIP_FILE" -d pos7_project
+
+          SETTINGS_FILE="$(find pos7_project -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit)"
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "::error::لم أجد settings.gradle داخل ملف المشروع."
+            exit 1
+          fi
+
+          PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "سيُبنى المشروع من: $PROJECT_DIR"
+
       - name: بناء APK
-        run: gradle --no-daemon assembleDebug
+        run: gradle -p "$PROJECT_DIR" --no-daemon assembleDebug
 
       - name: حفظ ملف APK
         uses: actions/upload-artifact@v4
         with:
           name: POS7-v459-80mm-printer-fix-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
