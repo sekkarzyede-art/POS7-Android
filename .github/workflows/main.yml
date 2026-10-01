@@ -1,45 +1,36 @@
-name: Build POS7 v456 APK
+name: Build POS7 v459 APK
 
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
-
-permissions:
-  contents: read
+    branches:
+      - main
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Check out repository
+      - name: تنزيل ملفات المشروع
         uses: actions/checkout@v4
 
-      - name: Set up Java 17
+      - name: إعداد Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v4
-
-      - name: Install Android 35 SDK packages
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
-
-      - name: Set up Gradle 8.9
+      - name: إعداد Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.9'
+          gradle-version: "8.9"
 
-      - name: Extract POS7 v456 project
-        run: unzip -oq POS7_v456_APK_Print_Fixed_Project.zip -d pos7_v456
+      - name: بناء APK
+        run: gradle --no-daemon assembleDebug
 
-      - name: Build debug APK
-        run: gradle --no-daemon -p pos7_v456 assembleDebug
-
-      - name: Upload APK artifact
+      - name: حفظ ملف APK
         uses: actions/upload-artifact@v4
         with:
-          name: POS7-v456-print-fix-debug-apk
-          path: pos7_v456/app/build/outputs/apk/debug/app-debug.apk
+          name: POS7-v459-80mm-printer-fix-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
