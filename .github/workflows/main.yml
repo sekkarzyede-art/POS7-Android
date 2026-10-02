@@ -1,4 +1,4 @@
-name: Build POS7 v465 APK
+name: Build POS7 v466 APK
 
 on:
   workflow_dispatch:
@@ -35,7 +35,7 @@ jobs:
             if [[ -n "$settings_file" ]]; then
               project_dir="$(dirname "$settings_file")"
             else
-              zip_file="$(find "$GITHUB_WORKSPACE" -type f -iname 'POS7_v465_APK_Project.zip' -not -path '*/.git/*' -print -quit)"
+              zip_file="$(find "$GITHUB_WORKSPACE" -type f -iname 'POS7_v466_APK_Project.zip' -not -path '*/.git/*' -print -quit)"
               if [[ -z "$zip_file" ]]; then
                 zip_file="$(find "$GITHUB_WORKSPACE" -type f -iname '*.zip' -not -path '*/.git/*' -print -quit)"
               fi
@@ -68,6 +68,6 @@ jobs:
       - name: حفظ APK للتنزيل
         uses: actions/upload-artifact@v4
         with:
-          name: POS7-v465-apk
+          name: POS7-v466-apk
           path: ${{ steps.project.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
