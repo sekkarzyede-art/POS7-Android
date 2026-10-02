@@ -1,10 +1,13 @@
-name: Build POS7 v466 APK
+name: Build POS7 v471 APK
 
 on:
   workflow_dispatch:
   push:
     branches:
       - main
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -18,56 +21,57 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
+
+      - name: إعداد Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
 
       - name: إعداد Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: تحديد مجلد مشروع Android
+      - name: تجهيز مشروع Android
         id: project
         shell: bash
         run: |
           set -euo pipefail
-          project_dir="$GITHUB_WORKSPACE"
-          if [[ ! -f "$project_dir/settings.gradle" && ! -f "$project_dir/settings.gradle.kts" ]]; then
-            settings_file="$(find "$GITHUB_WORKSPACE" -type f \( -name settings.gradle -o -name settings.gradle.kts \) -not -path '*/.git/*' -print -quit)"
-            if [[ -n "$settings_file" ]]; then
-              project_dir="$(dirname "$settings_file")"
-            else
-              zip_file="$(find "$GITHUB_WORKSPACE" -type f -iname 'POS7_v466_APK_Project.zip' -not -path '*/.git/*' -print -quit)"
-              if [[ -z "$zip_file" ]]; then
-                zip_file="$(find "$GITHUB_WORKSPACE" -type f -iname '*.zip' -not -path '*/.git/*' -print -quit)"
-              fi
-              if [[ -z "$zip_file" ]]; then
-                echo 'لم أجد ملفات Gradle في المستودع أو ZIP للمشروع.' >&2
-                exit 1
-              fi
-              unpack_dir="$RUNNER_TEMP/pos7-project"
-              mkdir -p "$unpack_dir"
-              unzip -q "$zip_file" -d "$unpack_dir"
-              settings_file="$(find "$unpack_dir" -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit)"
-              if [[ -z "$settings_file" ]]; then
-                echo 'تم فك ZIP لكن لم أعثر على settings.gradle داخله.' >&2
-                exit 1
-              fi
-              project_dir="$(dirname "$settings_file")"
+          archive="$GITHUB_WORKSPACE/POS7_v471_APK_Project.zip"
+          unpack="$RUNNER_TEMP/pos7-v471-project"
+          if [[ -f "$archive" ]]; then
+            mkdir -p "$unpack"
+            unzip -q "$archive" -d "$unpack"
+            settings_file="$(find "$unpack" -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit)"
+            if [[ -z "$settings_file" ]]; then
+              echo 'ZIP موجود لكنه لا يحتوي settings.gradle.' >&2
+              exit 1
             fi
-          fi
-          if [[ ! -f "$project_dir/app/build.gradle" && ! -f "$project_dir/app/build.gradle.kts" ]]; then
-            echo "مجلد المشروع لا يحتوي app/build.gradle: $project_dir" >&2
+            project_dir="$(dirname "$settings_file")"
+          elif [[ -f "$GITHUB_WORKSPACE/settings.gradle" && -f "$GITHUB_WORKSPACE/app/build.gradle" ]]; then
+            project_dir="$GITHUB_WORKSPACE"
+          else
+            echo 'لم أجد POS7_v471_APK_Project.zip في جذر المستودع أو مشروع Gradle كاملاً.' >&2
+            echo 'ارفع ZIP إلى جذر المستودع، وضع هذا الملف في .github/workflows/main.yml.' >&2
             exit 1
           fi
+          if [[ ! -f "$project_dir/app/src/main/assets/index.html" ]]; then
+            echo "ملف التطبيق غير موجود داخل: $project_dir" >&2
+            exit 1
+          fi
+          grep -q 'POS7_v471' "$project_dir/settings.gradle" || grep -q 'versionCode 470' "$project_dir/app/build.gradle"
+          echo "dir=$project_dir" >> "$GITHUB_OUTPUT"
           echo "مجلد البناء: $project_dir"
-          printf 'dir=%s\n' "$project_dir" >> "$GITHUB_OUTPUT"
 
       - name: بناء APK
         working-directory: ${{ steps.project.outputs.dir }}
-        run: gradle --no-daemon --stacktrace assembleDebug
+        run: gradle --no-daemon --stacktrace clean assembleDebug
 
       - name: حفظ APK للتنزيل
         uses: actions/upload-artifact@v4
         with:
-          name: POS7-v466-apk
+          name: POS7-v471-apk
           path: ${{ steps.project.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 14
