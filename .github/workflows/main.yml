@@ -1,4 +1,4 @@
-name: Build POS7 v477 APK
+name: Build POS7 v478 APK
 
 on:
   workflow_dispatch:
@@ -32,8 +32,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          archive="$GITHUB_WORKSPACE/POS7_v477_APK_Project.zip"
-          unpack="$GITHUB_WORKSPACE/pos7-v477-build-input"
+          archive="$GITHUB_WORKSPACE/POS7_v478_APK_Project.zip"
+          unpack="$GITHUB_WORKSPACE/pos7-v478-build-input"
           if [[ -f "$archive" ]]; then
             rm -rf "$unpack"
             mkdir -p "$unpack"
@@ -47,7 +47,7 @@ jobs:
           elif [[ -f "$GITHUB_WORKSPACE/settings.gradle" && -f "$GITHUB_WORKSPACE/app/build.gradle" ]]; then
             project_dir="$GITHUB_WORKSPACE"
           else
-            echo 'لم أجد POS7_v477_APK_Project.zip في جذر المستودع أو مشروع Gradle كاملاً.' >&2
+            echo 'لم أجد POS7_v478_APK_Project.zip في جذر المستودع أو مشروع Gradle كاملاً.' >&2
             echo 'ارفع ZIP إلى جذر المستودع، وضع هذا الملف في .github/workflows/main.yml.' >&2
             exit 1
           fi
@@ -55,8 +55,8 @@ jobs:
             echo "ملف التطبيق غير موجود داخل: $project_dir" >&2
             exit 1
           fi
-          if ! grep -q 'versionCode 477' "$project_dir/app/build.gradle"; then
-            echo 'الملف المضغوط ليس مشروع v477 المتوقع.' >&2
+          if ! grep -q 'versionCode 478' "$project_dir/app/build.gradle"; then
+            echo 'الملف المضغوط ليس مشروع v478 المتوقع.' >&2
             exit 1
           fi
           echo "dir=$project_dir" >> "$GITHUB_OUTPUT"
@@ -74,7 +74,7 @@ jobs:
       - name: حفظ APK للتنزيل
         uses: actions/upload-artifact@v4
         with:
-          name: POS7-v477-apk
+          name: POS7-v478-apk
           path: ${{ steps.project.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
