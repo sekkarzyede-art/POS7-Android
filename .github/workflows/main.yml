@@ -1,11 +1,11 @@
-name: Build POS7 v485.6.1 APK
+name: Build POS7 v485.6.2 APK
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
     paths:
-      - 'Sokkar_Zeyedeh_POS7_v485.6.1_APK_Project.zip'
+      - 'Sokkar_Zeyedeh_POS7_v485.6.2_APK_Project.zip'
       - '.github/workflows/main.yml'
 
 permissions:
@@ -36,7 +36,14 @@ jobs:
         run: sdkmanager 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
 
       - name: Extract Android project
-        run: unzip -q 'Sokkar_Zeyedeh_POS7_v485.6.1_APK_Project.zip' -d android-project
+        run: unzip -q 'Sokkar_Zeyedeh_POS7_v485.6.2_APK_Project.zip' -d android-project
+
+      - name: Verify packaged HTML source
+        run: |
+          asset='android-project/Sokkar_Zeyedeh_POS7_v485.6.2_APK_Project/app/src/main/assets/index.html'
+          test -s "$asset"
+          grep -Fq '<!-- POS7_APK_SOURCE=485.6.1 -->' "$asset"
+          echo 'Verified: APK embeds the v485.6.1 HTML source.'
 
       - name: Configure signing key
         env:
@@ -58,7 +65,7 @@ jobs:
           echo "POS7_KEYSTORE_PATH=$keyfile" >> "$GITHUB_ENV"
 
       - name: Build signed release APK
-        working-directory: android-project/Sokkar_Zeyedeh_POS7_v485.6.1_APK_Project
+        working-directory: android-project/Sokkar_Zeyedeh_POS7_v485.6.2_APK_Project
         env:
           POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
           POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
@@ -67,14 +74,14 @@ jobs:
 
       - name: Verify APK signature
         run: |
-          apk='android-project/Sokkar_Zeyedeh_POS7_v485.6.1_APK_Project/app/build/outputs/apk/release/app-release.apk'
+          apk='android-project/Sokkar_Zeyedeh_POS7_v485.6.2_APK_Project/app/build/outputs/apk/release/app-release.apk'
           test -s "$apk"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
 
       - name: Upload signed APK
         uses: actions/upload-artifact@v6
         with:
-          name: Sokkar-Zeyedeh-POS7-v485.6.1-release-update-apk
-          path: android-project/Sokkar_Zeyedeh_POS7_v485.6.1_APK_Project/app/build/outputs/apk/release/app-release.apk
+          name: Sokkar-Zeyedeh-POS7-v485.6.2-release-update-apk
+          path: android-project/Sokkar_Zeyedeh_POS7_v485.6.2_APK_Project/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
