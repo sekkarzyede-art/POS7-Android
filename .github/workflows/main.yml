@@ -1,11 +1,12 @@
-name: Build POS7 v485.6.2 APK
+name: Build POS7 v485.7.10 APK
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
     paths:
-      - 'Sokkar_Zeyedeh_POS7_v485.6.2_APK_Project.zip'
+      - 'POS7_v485.7.10_APK_Project/**'
+      - 'POS7_v485.7.10_APK_Project.zip'
       - '.github/workflows/main.yml'
 
 permissions:
@@ -35,15 +36,37 @@ jobs:
       - name: Install Android build packages
         run: sdkmanager 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
 
-      - name: Extract Android project
-        run: unzip -q 'Sokkar_Zeyedeh_POS7_v485.6.2_APK_Project.zip' -d android-project
-
-      - name: Verify packaged HTML source
+      - name: Locate Android project
+        id: project
+        shell: bash
         run: |
-          asset='android-project/Sokkar_Zeyedeh_POS7_v485.6.2_APK_Project/app/src/main/assets/index.html'
-          test -s "$asset"
-          grep -Fq '<!-- POS7_APK_SOURCE=485.6.1 -->' "$asset"
-          echo 'Verified: APK embeds the v485.6.1 HTML source.'
+          set -euo pipefail
+          project_dir='POS7_v485.7.10_APK_Project'
+          if [[ ! -f "$project_dir/settings.gradle" ]]; then
+            archive='POS7_v485.7.10_APK_Project.zip'
+            if [[ ! -f "$archive" ]]; then
+              echo 'Upload POS7_v485.7.10_APK_Project.zip or its extracted folder to the repository root.' >&2
+              exit 1
+            fi
+            mkdir -p android-project
+            unzip -q "$archive" -d android-project
+            project_dir="$(find android-project -maxdepth 5 -type f -name settings.gradle -print -quit | xargs -r dirname)"
+          fi
+          test -n "$project_dir"
+          test -f "$project_dir/app/build.gradle"
+          test -f "$project_dir/app/src/main/assets/index.html"
+          echo "dir=$project_dir" >> "$GITHUB_OUTPUT"
+
+      - name: Check package, version, and embedded sound
+        env:
+          PROJECT_DIR: ${{ steps.project.outputs.dir }}
+        run: |
+          set -euo pipefail
+          grep -Fq "applicationId 'com.sokkarzeyedeh.pos7'" "$PROJECT_DIR/app/build.gradle"
+          grep -Fq 'versionCode 4850710' "$PROJECT_DIR/app/build.gradle"
+          grep -Fq "versionName '485.7.10'" "$PROJECT_DIR/app/build.gradle"
+          grep -Fq 'data:audio/mpeg;base64,' "$PROJECT_DIR/app/src/main/assets/index.html"
+          grep -Fq 'v485.7.10' "$PROJECT_DIR/app/src/main/assets/index.html"
 
       - name: Configure signing key
         env:
@@ -65,23 +88,30 @@ jobs:
           echo "POS7_KEYSTORE_PATH=$keyfile" >> "$GITHUB_ENV"
 
       - name: Build signed release APK
-        working-directory: android-project/Sokkar_Zeyedeh_POS7_v485.6.2_APK_Project
+        working-directory: ${{ steps.project.outputs.dir }}
         env:
           POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
           POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
           POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
         run: gradle --no-daemon clean assembleRelease
 
-      - name: Verify APK signature
+      - name: Verify APK signature and package metadata
+        env:
+          PROJECT_DIR: ${{ steps.project.outputs.dir }}
         run: |
-          apk='android-project/Sokkar_Zeyedeh_POS7_v485.6.2_APK_Project/app/build/outputs/apk/release/app-release.apk'
+          set -euo pipefail
+          apk="$PROJECT_DIR/app/build/outputs/apk/release/app-release.apk"
           test -s "$apk"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" > "$RUNNER_TEMP/pos7-badging.txt"
+          grep -Fq "name='com.sokkarzeyedeh.pos7'" "$RUNNER_TEMP/pos7-badging.txt"
+          grep -Fq "versionCode='4850710'" "$RUNNER_TEMP/pos7-badging.txt"
+          grep -Fq "versionName='485.7.10'" "$RUNNER_TEMP/pos7-badging.txt"
 
       - name: Upload signed APK
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
-          name: Sokkar-Zeyedeh-POS7-v485.6.2-release-update-apk
-          path: android-project/Sokkar_Zeyedeh_POS7_v485.6.2_APK_Project/app/build/outputs/apk/release/app-release.apk
+          name: POS7-v485.7.10-release-update-apk
+          path: ${{ steps.project.outputs.dir }}/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
