@@ -1,142 +1,42 @@
-name: Build POS7 v485.7.55 and phone entry APKs
+name: Package POS7 v485.7.57 HTML test versions
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
     paths:
-      - 'POS7_v485.7.55_APK_Project/**'
-      - 'POS7_Phone_Entry_APK_Project/**'
-      - 'POS7_v485.7.55_Cloud_Sync_Project.zip'
+      - 'POS7_v485.7.57_Tablet_Test.html'
+      - 'POS7_v485.7.57_Owner_Phone_Test.html'
+      - 'POS7_v485.7.57_Owner_Cloud.sql'
       - '.github/workflows/main.yml'
 
 permissions:
   contents: read
 
 jobs:
-  build:
+  package-html:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
-      - name: Set up Java 17
-        uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Set up Gradle 8.9
-        uses: gradle/actions/setup-gradle@v6
-        with:
-          gradle-version: '8.9'
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v4
-
-      - name: Install Android build packages
-        run: sdkmanager 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
-
-      - name: Locate projects
-        id: projects
+      - name: Check files and package the HTML tests
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p android-project
-          if [[ ! -f 'POS7_v485.7.55_APK_Project/settings.gradle' || ! -f 'POS7_Phone_Entry_APK_Project/settings.gradle' ]]; then
-            archive='POS7_v485.7.55_Cloud_Sync_Project.zip'
-            if [[ ! -f "$archive" ]]; then
-              echo 'Upload the project zip to the repository root, or extract both project folders there.' >&2
-              exit 1
-            fi
-            mkdir -p android-project
-            unzip -oq "$archive" -d android-project
-          fi
-          pos_dir="$(find . android-project -type f -path '*/POS7_v485.7.55_APK_Project/settings.gradle' -print -quit | xargs -r dirname)"
-          phone_dir="$(find . android-project -type f -path '*/POS7_Phone_Entry_APK_Project/settings.gradle' -print -quit | xargs -r dirname)"
-          test -n "$pos_dir" && test -n "$phone_dir"
-          echo "pos_dir=$pos_dir" >> "$GITHUB_OUTPUT"
-          echo "phone_dir=$phone_dir" >> "$GITHUB_OUTPUT"
+          test -s POS7_v485.7.57_Tablet_Test.html
+          test -s POS7_v485.7.57_Owner_Phone_Test.html
+          test -s POS7_v485.7.57_Owner_Cloud.sql
+          mkdir -p dist
+          zip -j dist/POS7_v485.7.57_HTML_Test_Versions.zip \
+            POS7_v485.7.57_Tablet_Test.html \
+            POS7_v485.7.57_Owner_Phone_Test.html \
+            POS7_v485.7.57_Owner_Cloud.sql
 
-      - name: Check project versions and cloud assets
-        env:
-          POS_DIR: ${{ steps.projects.outputs.pos_dir }}
-          PHONE_DIR: ${{ steps.projects.outputs.phone_dir }}
-        run: |
-          set -euo pipefail
-          grep -Fq "applicationId 'com.sokkarzeyedeh.pos7'" "$POS_DIR/app/build.gradle"
-          grep -Fq 'versionCode 4850755' "$POS_DIR/app/build.gradle"
-          grep -Fq "versionName '485.7.55'" "$POS_DIR/app/build.gradle"
-          grep -Fq 'pos7-cloud-sync-bridge' "$POS_DIR/app/src/main/assets/index.html"
-          grep -Fq 'data:audio/mpeg;base64,' "$POS_DIR/app/src/main/assets/index.html"
-          grep -Fq "applicationId 'com.sokkarzeyedeh.pos7phone'" "$PHONE_DIR/app/build.gradle"
-          grep -Fq 'pos7_mobile_events' "$PHONE_DIR/app/src/main/assets/index.html"
-
-      - name: Configure signing key
-        env:
-          POS7_KEYSTORE_BASE64: ${{ secrets.POS7_KEYSTORE_BASE64 }}
-          POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
-          POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
-          POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          for key in POS7_KEYSTORE_BASE64 POS7_KEYSTORE_PASSWORD POS7_KEY_ALIAS POS7_KEY_PASSWORD; do
-            if [[ -z "${!key:-}" ]]; then
-              echo "Missing GitHub Actions secret: $key" >&2
-              exit 1
-            fi
-          done
-          keyfile="$RUNNER_TEMP/pos7-release.jks"
-          printf '%s' "$POS7_KEYSTORE_BASE64" | base64 --decode > "$keyfile"
-          test -s "$keyfile"
-          echo "POS7_KEYSTORE_PATH=$keyfile" >> "$GITHUB_ENV"
-
-      - name: Build signed POS7 tablet update
-        working-directory: ${{ steps.projects.outputs.pos_dir }}
-        env:
-          POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
-          POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
-          POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
-        run: gradle --no-daemon clean assembleRelease
-
-      - name: Build signed phone entry APK
-        working-directory: ${{ steps.projects.outputs.phone_dir }}
-        env:
-          POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
-          POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
-          POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
-        run: gradle --no-daemon clean assembleRelease
-
-      - name: Verify APKs
-        env:
-          POS_DIR: ${{ steps.projects.outputs.pos_dir }}
-          PHONE_DIR: ${{ steps.projects.outputs.phone_dir }}
-        run: |
-          set -euo pipefail
-          pos_apk="$POS_DIR/app/build/outputs/apk/release/app-release.apk"
-          phone_apk="$PHONE_DIR/app/build/outputs/apk/release/app-release.apk"
-          test -s "$pos_apk" && test -s "$phone_apk"
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$pos_apk"
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$phone_apk"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$pos_apk" > "$RUNNER_TEMP/pos7-badging.txt"
-          grep -Fq "name='com.sokkarzeyedeh.pos7'" "$RUNNER_TEMP/pos7-badging.txt"
-          grep -Fq "versionCode='4850755'" "$RUNNER_TEMP/pos7-badging.txt"
-          grep -Fq "versionName='485.7.55'" "$RUNNER_TEMP/pos7-badging.txt"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$phone_apk" > "$RUNNER_TEMP/phone-badging.txt"
-          grep -Fq "name='com.sokkarzeyedeh.pos7phone'" "$RUNNER_TEMP/phone-badging.txt"
-
-      - name: Upload tablet update APK
-        uses: actions/upload-artifact@v7
+      - name: Upload HTML test versions
+        uses: actions/upload-artifact@v4
         with:
-          name: POS7-v485.7.55-tablet-update-apk
-          path: ${{ steps.projects.outputs.pos_dir }}/app/build/outputs/apk/release/app-release.apk
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Upload phone entry APK
-        uses: actions/upload-artifact@v7
-        with:
-          name: POS7-phone-entry-apk
-          path: ${{ steps.projects.outputs.phone_dir }}/app/build/outputs/apk/release/app-release.apk
+          name: POS7-v485.7.57-HTML-test-versions
+          path: dist/POS7_v485.7.57_HTML_Test_Versions.zip
           if-no-files-found: error
           retention-days: 14
