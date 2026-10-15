@@ -1,4 +1,4 @@
-name: Build POS7 v485.7.65 APK
+name: Build POS7 Tablet and Phone APKs
 
 on:
   workflow_dispatch:
@@ -36,32 +36,22 @@ jobs:
       - name: Install Android build packages
         run: sdkmanager 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
 
-      - name: Extract Android project
-        id: project
+      - name: Extract both Android projects
         run: |
           set -euo pipefail
           mkdir -p android-project
-          if [[ -f POS7_v485_APK_Project/settings.gradle ]]; then
-            project_dir=POS7_v485_APK_Project
-          else
-            archive="$(find . -maxdepth 5 -type f -iname 'POS7_v485_APK_Project*.zip' -print -quit)"
-            if [[ -z "$archive" ]]; then
-              archive="$(find . -maxdepth 5 -type f -iname '*v485*APK*Project*.zip' -print -quit)"
-            fi
-            if [[ -z "$archive" ]]; then
-              echo 'Project ZIP not found. Upload POS7_v485_APK_Project.zip (or a renamed copy) to the repository, or upload the extracted POS7_v485_APK_Project folder.' >&2
-              find . -maxdepth 4 -type f -iname '*.zip' -print >&2 || true
-              exit 1
-            fi
-            echo "Using project archive: $archive"
-            unzip -q "$archive" -d android-project
-            project_dir="$(find android-project -maxdepth 6 -type f -name settings.gradle -print -quit | xargs -r dirname)"
+          archive="$(find . -maxdepth 5 -type f -iname '*Dual*APK*Project*.zip' -print -quit)"
+          if [[ -z "$archive" ]]; then
+            archive="$(find . -maxdepth 5 -type f -iname '*Tablet*Phone*APK*Project*.zip' -print -quit)"
           fi
-          if [[ -z "${project_dir:-}" || ! -f "$project_dir/app/build.gradle" ]]; then
-            echo 'The uploaded archive does not contain a Gradle Android project with app/build.gradle.' >&2
+          if [[ -z "$archive" ]]; then
+            echo 'Dual tablet and phone APK project ZIP not found.' >&2
+            find . -maxdepth 4 -type f -iname '*.zip' -print >&2 || true
             exit 1
           fi
-          echo "dir=$project_dir" >> "$GITHUB_OUTPUT"
+          unzip -q "$archive" -d android-project
+          test -f android-project/POS7_v485_Dual_APK_Project/Tablet/POS7_v485_APK_Project/settings.gradle
+          test -f android-project/POS7_v485_Dual_APK_Project/Phone/POS7_v485_APK_Project/settings.gradle
 
       - name: Configure signing key
         env:
@@ -82,24 +72,46 @@ jobs:
           test -s "$keyfile"
           echo "POS7_KEYSTORE_PATH=$keyfile" >> "$GITHUB_ENV"
 
-      - name: Build signed release APK
-        working-directory: ${{ steps.project.outputs.dir }}
+      - name: Build tablet release APK
+        working-directory: android-project/POS7_v485_Dual_APK_Project/Tablet/POS7_v485_APK_Project
         env:
           POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
           POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
           POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
         run: gradle --no-daemon clean assembleRelease
 
-      - name: Verify APK signature
+      - name: Verify tablet APK signature
         run: |
-          apk='${{ steps.project.outputs.dir }}/app/build/outputs/apk/release/app-release.apk'
+          apk='android-project/POS7_v485_Dual_APK_Project/Tablet/POS7_v485_APK_Project/app/build/outputs/apk/release/app-release.apk'
           test -s "$apk"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
 
-      - name: Upload signed APK
+      - name: Upload tablet APK
         uses: actions/upload-artifact@v7
         with:
-          name: POS7-v485.7.65-release-update-apk
-          path: ${{ steps.project.outputs.dir }}/app/build/outputs/apk/release/app-release.apk
+          name: POS7-Tablet-v485.7.65-update-apk
+          path: android-project/POS7_v485_Dual_APK_Project/Tablet/POS7_v485_APK_Project/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Build phone release APK
+        working-directory: android-project/POS7_v485_Dual_APK_Project/Phone/POS7_v485_APK_Project
+        env:
+          POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
+          POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
+          POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
+        run: gradle --no-daemon clean assembleRelease
+
+      - name: Verify phone APK signature
+        run: |
+          apk='android-project/POS7_v485_Dual_APK_Project/Phone/POS7_v485_APK_Project/app/build/outputs/apk/release/app-release.apk'
+          test -s "$apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
+
+      - name: Upload phone APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: POS7-Phone-v485.7.66-update-apk
+          path: android-project/POS7_v485_Dual_APK_Project/Phone/POS7_v485_APK_Project/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
