@@ -52,16 +52,20 @@ jobs:
       - name: Set increasing Android version codes
         run: |
           set -euo pipefail
-          tablet='android-project/POS7_v485_Dual_APK_Project/Tablet/POS7_v485_APK_Project/app/build.gradle'
-          phone='android-project/POS7_v485_Dual_APK_Project/Phone/POS7_v485_APK_Project/app/build.gradle'
-          test -f "$tablet"
-          test -f "$phone"
-          sed -i -E 's/versionCode[[:space:]]+[0-9]+/versionCode 4850765/' "$tablet"
-          sed -i -E 's/versionCode[[:space:]]+[0-9]+/versionCode 4850766/' "$phone"
-          grep -Fq 'versionCode 4850765' "$tablet"
-          grep -Fq 'versionCode 4850766' "$phone"
-          grep -Fq "applicationId 'com.sokkarzeyedeh.pos7owner'" "$phone"
-          grep -Fq 'هاتف المالك 485.7.64' "$phone/app/src/main/assets/index.html"
+          tablet_dir='android-project/POS7_v485_Dual_APK_Project/Tablet/POS7_v485_APK_Project'
+          phone_dir='android-project/POS7_v485_Dual_APK_Project/Phone/POS7_v485_APK_Project'
+          tablet_gradle="$tablet_dir/app/build.gradle"
+          phone_gradle="$phone_dir/app/build.gradle"
+          phone_html="$phone_dir/app/src/main/assets/index.html"
+          test -f "$tablet_gradle"
+          test -f "$phone_gradle"
+          test -f "$phone_html"
+          sed -i -E 's/versionCode[[:space:]]+[0-9]+/versionCode 4850765/' "$tablet_gradle"
+          sed -i -E 's/versionCode[[:space:]]+[0-9]+/versionCode 4850766/' "$phone_gradle"
+          grep -Fq 'versionCode 4850765' "$tablet_gradle"
+          grep -Fq 'versionCode 4850766' "$phone_gradle"
+          grep -Fq "applicationId 'com.sokkarzeyedeh.pos7owner'" "$phone_gradle"
+          grep -Fq 'هاتف المالك 485.7.64' "$phone_html"
 
       - name: Configure signing key
         env:
