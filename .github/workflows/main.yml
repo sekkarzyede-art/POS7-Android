@@ -8,6 +8,7 @@ on:
       - 'POS7_v485.7.57_Tablet_Test.html'
       - 'POS7_v485.7.57_Owner_Phone_Test.html'
       - 'POS7_v485.7.57_Owner_Cloud.sql'
+      - 'POS7_v485.7.57_HTML_Test_Versions.zip'
       - '.github/workflows/main.yml'
 
 permissions:
@@ -20,18 +21,25 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Check files and package the HTML tests
+      - name: Prepare the test package
         shell: bash
         run: |
           set -euo pipefail
-          test -s POS7_v485.7.57_Tablet_Test.html
-          test -s POS7_v485.7.57_Owner_Phone_Test.html
-          test -s POS7_v485.7.57_Owner_Cloud.sql
           mkdir -p dist
-          zip -j dist/POS7_v485.7.57_HTML_Test_Versions.zip \
-            POS7_v485.7.57_Tablet_Test.html \
-            POS7_v485.7.57_Owner_Phone_Test.html \
-            POS7_v485.7.57_Owner_Cloud.sql
+          bundle='POS7_v485.7.57_HTML_Test_Versions.zip'
+          if [[ -s "$bundle" ]]; then
+            cp "$bundle" dist/
+          else
+            tablet="$(find . -type f -name 'POS7_v485.7.57_Tablet_Test.html' -print -quit)"
+            phone="$(find . -type f -name 'POS7_v485.7.57_Owner_Phone_Test.html' -print -quit)"
+            cloud="$(find . -type f -name 'POS7_v485.7.57_Owner_Cloud.sql' -print -quit)"
+            if [[ -z "$tablet" || -z "$phone" || -z "$cloud" ]]; then
+              echo 'Upload POS7_v485.7.57_HTML_Test_Versions.zip to the repository root, or upload the tablet HTML, phone HTML, and SQL files.' >&2
+              exit 1
+            fi
+            zip -j "dist/$bundle" "$tablet" "$phone" "$cloud"
+          fi
+          unzip -t "dist/$bundle"
 
       - name: Upload HTML test versions
         uses: actions/upload-artifact@v4
