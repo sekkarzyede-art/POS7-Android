@@ -40,7 +40,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p android-project
-          archive="$(find . -maxdepth 5 -type f -iname '*Dual*APK*Project*.zip' -print -quit)"
+          archive="$(find . -maxdepth 5 -type f -iname 'POS7_v485_Dual_APK_Project_Distinct_Names.zip' -print -quit)"
+          if [[ -z "$archive" ]]; then
+            archive="$(find . -maxdepth 5 -type f -iname '*Dual*APK*Project*.zip' -print -quit)"
+          fi
           if [[ -z "$archive" ]]; then
             archive="$(find . -maxdepth 5 -type f -iname '*Tablet*Phone*APK*Project*.zip' -print -quit)"
           fi
@@ -86,11 +89,16 @@ jobs:
           test -s "$apk"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
 
+      - name: Give tablet APK a distinct filename
+        run: |
+          mkdir -p dist
+          cp android-project/POS7_v485_Dual_APK_Project/Tablet/POS7_v485_APK_Project/app/build/outputs/apk/release/app-release.apk dist/POS7-Tablet-v485.7.65.apk
+
       - name: Upload tablet APK
         uses: actions/upload-artifact@v7
         with:
           name: POS7-Tablet-v485.7.65-update-apk
-          path: android-project/POS7_v485_Dual_APK_Project/Tablet/POS7_v485_APK_Project/app/build/outputs/apk/release/app-release.apk
+          path: dist/POS7-Tablet-v485.7.65.apk
           if-no-files-found: error
           retention-days: 14
 
@@ -108,10 +116,15 @@ jobs:
           test -s "$apk"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
 
+      - name: Give phone APK a distinct filename
+        run: |
+          mkdir -p dist
+          cp android-project/POS7_v485_Dual_APK_Project/Phone/POS7_v485_APK_Project/app/build/outputs/apk/release/app-release.apk dist/POS7-Phone-v485.7.66.apk
+
       - name: Upload phone APK
         uses: actions/upload-artifact@v7
         with:
           name: POS7-Phone-v485.7.66-update-apk
-          path: android-project/POS7_v485_Dual_APK_Project/Phone/POS7_v485_APK_Project/app/build/outputs/apk/release/app-release.apk
+          path: dist/POS7-Phone-v485.7.66.apk
           if-no-files-found: error
           retention-days: 14
