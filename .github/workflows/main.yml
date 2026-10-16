@@ -1,38 +1,50 @@
-name: Build POS7 Tablet Cloud Relink APK
+name: Build POS7 Tablet v485.7.71 Storage Quota Fix
+
 on:
   workflow_dispatch:
   push:
     branches: [main]
     paths:
-      - 'POS7_Tablet_Cloud_Relink_v485.7.68.zip'
+      - 'POS7_Tablet_Storage_Quota_Fix_v485.7.71.zip'
       - '.github/workflows/main.yml'
+
 permissions:
   contents: read
+
 jobs:
   build-tablet:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+
       - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Set up Android SDK and required packages
+
+      - name: Set up Android command line tools
         uses: android-actions/setup-android@v4
-        with:
-          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+
+      - name: Install Android packages
+        run: |
+          set -euo pipefail
+          sdkmanager --install 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
+          yes | sdkmanager --licenses >/dev/null || true
+
       - name: Extract tablet project
         run: |
           set -euo pipefail
-          unzip -q POS7_Tablet_Cloud_Relink_v485.7.68.zip -d android-project
+          unzip -q POS7_Tablet_Storage_Quota_Fix_v485.7.71.zip -d android-project
           test -f android-project/POS7_v485_Dual_APK_Project/Tablet/POS7_v485_APK_Project/settings.gradle
-      - name: Configure signing key
+
+      - name: Configure existing POS7 signing key
         env:
           POS7_KEYSTORE_BASE64: ${{ secrets.POS7_KEYSTORE_BASE64 }}
           POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
@@ -41,12 +53,16 @@ jobs:
         run: |
           set -euo pipefail
           for key in POS7_KEYSTORE_BASE64 POS7_KEYSTORE_PASSWORD POS7_KEY_ALIAS POS7_KEY_PASSWORD; do
-            if [[ -z "${!key:-}" ]]; then echo "Missing GitHub secret: $key" >&2; exit 1; fi
+            if [[ -z "${!key:-}" ]]; then
+              echo "Missing GitHub secret: $key" >&2
+              exit 1
+            fi
           done
           keyfile="$RUNNER_TEMP/pos7-release.jks"
           printf '%s' "$POS7_KEYSTORE_BASE64" | base64 --decode > "$keyfile"
           test -s "$keyfile"
           echo "POS7_KEYSTORE_PATH=$keyfile" >> "$GITHUB_ENV"
+
       - name: Build tablet release APK
         working-directory: android-project/POS7_v485_Dual_APK_Project/Tablet/POS7_v485_APK_Project
         env:
@@ -54,17 +70,22 @@ jobs:
           POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
           POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
         run: gradle --no-daemon clean assembleRelease
-      - name: Verify APK signature and package
+
+      - name: Verify APK package, version, and existing signature
         run: |
           set -euo pipefail
           apk='android-project/POS7_v485_Dual_APK_Project/Tablet/POS7_v485_APK_Project/app/build/outputs/apk/release/app-release.apk'
           test -s "$apk"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" | grep -Fq "package: name='com.sokkarzeyedeh.pos7' versionCode='4850768' versionName='485.7.68'"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" | grep -Fq "package: name='com.sokkarzeyedeh.pos7' versionCode='4850771' versionName='485.7.71'"
+          expected='843ed618b18ec7a0cbb50f38984374540da016c41a8df8042bb8db19964d4495'
+          actual=$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$apk" | sed -n 's/.*SHA-256 digest: //p' | head -n 1 | tr -d ':[:space:]' | tr 'A-F' 'a-f')
+          test "$actual" = "$expected"
+
       - name: Upload tablet APK
         uses: actions/upload-artifact@v4
         with:
-          name: POS7-Tablet-v485.7.68-Cloud-Relink
+          name: POS7-Tablet-v485.7.71-storage-quota-fix
           path: android-project/POS7_v485_Dual_APK_Project/Tablet/POS7_v485_APK_Project/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
