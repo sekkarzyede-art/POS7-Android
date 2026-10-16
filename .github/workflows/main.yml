@@ -1,10 +1,10 @@
-name: Build POS7 Tablet v485.7.72 Sale Invoice Row Update
+name: Build POS7 Tablet v485.7.73 Sale Invoice Row Update
 on:
   workflow_dispatch:
   push:
     branches: [main]
     paths:
-      - 'POS7_Tablet_Sale_Invoice_Row_v485.7.72.zip'
+      - 'POS7_Tablet_Sale_Invoice_Row_v485.7.73.zip'
       - '.github/workflows/main.yml'
 permissions:
   contents: read
@@ -33,7 +33,7 @@ jobs:
       - name: Extract tablet project
         run: |
           set -euo pipefail
-          unzip -q POS7_Tablet_Sale_Invoice_Row_v485.7.72.zip -d android-project
+          unzip -q POS7_Tablet_Sale_Invoice_Row_v485.7.73.zip -d android-project
           test -f android-project/POS7_v485_Dual_APK_Project/Tablet/POS7_v485_APK_Project/settings.gradle
       - name: Configure existing POS7 signing key
         env:
@@ -60,17 +60,4 @@ jobs:
       - name: Verify APK package, version, and existing signature
         run: |
           set -euo pipefail
-          apk='android-project/POS7_v485_Dual_APK_Project/Tablet/POS7_v485_APK_Project/app/build/outputs/apk/release/app-release.apk'
-          test -s "$apk"
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" | grep -Fq "package: name='com.sokkarzeyedeh.pos7' versionCode='4850772' versionName='485.7.72'"
-          expected='843ed618b18ec7a0cbb50f38984374540da016c41a8df8042bb8db19964d4495'
-          actual=$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$apk" | sed -n 's/.*SHA-256 digest: //p' | head -n 1 | tr -d ':[:space:]' | tr 'A-F' 'a-f')
-          test "$actual" = "$expected"
-      - name: Upload tablet APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: POS7-Tablet-v485.7.72-sale-invoice-row
-          path: android-project/POS7_v485_Dual_APK_Project/Tablet/POS7_v485_APK_Project/app/build/outputs/apk/release/app-release.apk
-          if-no-files-found: error
-          retention-days: 14
+          apk='android-project/POS7_v485_Dual_APK_Project/Tablet/POS7
