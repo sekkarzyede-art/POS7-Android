@@ -1,6 +1,9 @@
 name: Build POS7 Tablet and Phone APKs
 
 on:
+name: Build POS7 Tablet and Phone APKs
+
+on:
   workflow_dispatch:
   push:
     branches: [main]
@@ -42,7 +45,14 @@ jobs:
           mkdir -p android-project
           archive="$(find . -maxdepth 5 -type f -iname 'POS7_Tablet_and_Owner_Phone_Project.zip' -print -quit)"
           if [[ -z "$archive" ]]; then
-            echo 'Corrected tablet and owner phone project ZIP not found.' >&2
+            archive="$(find . -maxdepth 5 -type f -iname '*Dual*APK*Project*.zip' -print -quit)"
+          fi
+          if [[ -z "$archive" ]]; then
+            archive="$(find . -maxdepth 5 -type f -iname '*Tablet*Phone*APK*Project*.zip' -print -quit)"
+          fi
+          if [[ -z "$archive" ]]; then
+            echo 'Dual tablet and phone APK project ZIP not found.' >&2
+            find . -maxdepth 4 -type f -iname '*.zip' -print >&2 || true
             exit 1
           fi
           unzip -q "$archive" -d android-project
@@ -98,7 +108,7 @@ jobs:
         run: |
           apk='android-project/POS7_v485_Dual_APK_Project/Tablet/POS7_v485_APK_Project/app/build/outputs/apk/release/app-release.apk'
           test -s "$apk"
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$apk"
 
       - name: Verify tablet package and version
         run: |
@@ -106,7 +116,7 @@ jobs:
           apk='android-project/POS7_v485_Dual_APK_Project/Tablet/POS7_v485_APK_Project/app/build/outputs/apk/release/app-release.apk'
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" | grep -Fq "package: name='com.sokkarzeyedeh.pos7' versionCode='4850765' versionName='485.7.65'"
 
-      - name: Prepare tablet APK
+      - name: Give tablet APK a distinct filename
         run: |
           mkdir -p dist
           cp android-project/POS7_v485_Dual_APK_Project/Tablet/POS7_v485_APK_Project/app/build/outputs/apk/release/app-release.apk dist/POS7-Tablet-v485.7.65.apk
@@ -119,7 +129,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Build owner phone release APK
+      - name: Build phone release APK
         working-directory: android-project/POS7_v485_Dual_APK_Project/Phone/POS7_v485_APK_Project
         env:
           POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
@@ -127,24 +137,24 @@ jobs:
           POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
         run: gradle --no-daemon clean assembleRelease
 
-      - name: Verify owner phone APK signature
+      - name: Verify phone APK signature
         run: |
           apk='android-project/POS7_v485_Dual_APK_Project/Phone/POS7_v485_APK_Project/app/build/outputs/apk/release/app-release.apk'
           test -s "$apk"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
 
-      - name: Verify owner phone package and version
+      - name: Verify phone package and version
         run: |
           set -euo pipefail
           apk='android-project/POS7_v485_Dual_APK_Project/Phone/POS7_v485_APK_Project/app/build/outputs/apk/release/app-release.apk'
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" | grep -Fq "package: name='com.sokkarzeyedeh.pos7owner' versionCode='4850766' versionName='485.7.66'"
 
-      - name: Prepare owner phone APK
+      - name: Give phone APK a distinct filename
         run: |
           mkdir -p dist
           cp android-project/POS7_v485_Dual_APK_Project/Phone/POS7_v485_APK_Project/app/build/outputs/apk/release/app-release.apk dist/POS7-Owner-Phone-v485.7.66.apk
 
-      - name: Upload owner phone APK
+      - name: Upload phone APK
         uses: actions/upload-artifact@v7
         with:
           name: POS7-Owner-Phone-v485.7.66-update-apk
