@@ -60,4 +60,21 @@ jobs:
       - name: Verify APK package, version, and existing signature
         run: |
           set -euo pipefail
-          apk='android-project/POS7_v485_Dual_APK_Project/Tablet/POS7
+          apk=android-project/POS7_v485_Dual_APK_Project/Tablet/POS7_v485_APK_Project/app/build/outputs/apk/release/app-release.apk
+          test -s "$apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
+          badging=$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk")
+          printf '%s\n' "$badging" | grep -Fq "package: name='com.sokkarzeyedeh.pos7' versionCode='4850773' versionName='485.7.73'"
+          expected=84:3e:d6:18:b1:8e:c7:a0:cb:b5:0f:38:98:43:74:54:0d:a0:16:c4:1a:8d:f8:04:2b:b8:db:19:96:4d:44:95
+          actual=$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$apk" | awk -F": " "/SHA-256 digest:/ {print tolower(\$2); exit}")
+          if [ "$actual" != "$expected" ]; then
+            echo "APK signature does not match the installed POS7 signing certificate" >&2
+            exit 1
+          fi
+      - name: Upload tablet APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: POS7-Tablet-v485.7.73-sale-invoice-row
+          path: android-project/POS7_v485_Dual_APK_Project/Tablet/POS7_v485_APK_Project/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
