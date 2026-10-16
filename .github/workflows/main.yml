@@ -1,4 +1,5 @@
 name: Build POS7 Tablet v485.7.73 Sale Invoice Row Update
+
 on:
   workflow_dispatch:
   push:
@@ -6,36 +7,44 @@ on:
     paths:
       - 'POS7_Tablet_Sale_Invoice_Row_v485.7.73.zip'
       - '.github/workflows/main.yml'
+
 permissions:
   contents: read
+
 jobs:
   build-tablet:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+
       - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+
       - name: Set up Android command line tools
         uses: android-actions/setup-android@v4
+
       - name: Install Android packages
         run: |
           set -euo pipefail
           sdkmanager --install 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
           yes | sdkmanager --licenses >/dev/null || true
+
       - name: Extract tablet project
         run: |
           set -euo pipefail
           unzip -q POS7_Tablet_Sale_Invoice_Row_v485.7.73.zip -d android-project
           test -f android-project/POS7_v485_Dual_APK_Project/Tablet/POS7_v485_APK_Project/settings.gradle
-      - name: Configure existing POS7 signing key
+
+      - name: Configure and verify existing POS7 signing key
         env:
           POS7_KEYSTORE_BASE64: ${{ secrets.POS7_KEYSTORE_BASE64 }}
           POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
@@ -44,12 +53,36 @@ jobs:
         run: |
           set -euo pipefail
           for key in POS7_KEYSTORE_BASE64 POS7_KEYSTORE_PASSWORD POS7_KEY_ALIAS POS7_KEY_PASSWORD; do
-            if [[ -z "${!key:-}" ]]; then echo "Missing GitHub secret: $key" >&2; exit 1; fi
+            if [[ -z "${!key:-}" ]]; then
+              echo "Missing GitHub secret: $key" >&2
+              exit 1
+            fi
           done
+
           keyfile="$RUNNER_TEMP/pos7-release.jks"
           printf '%s' "$POS7_KEYSTORE_BASE64" | base64 --decode > "$keyfile"
           test -s "$keyfile"
+
+          certfile="$RUNNER_TEMP/pos7-release-cert.der"
+          keytool -exportcert \
+            -keystore "$keyfile" \
+            -storepass "$POS7_KEYSTORE_PASSWORD" \
+            -alias "$POS7_KEY_ALIAS" \
+            -file "$certfile" >/dev/null
+
+          actual_cert=$(openssl x509 -inform DER -in "$certfile" -noout -fingerprint -sha256 |
+            cut -d= -f2 | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          expected_cert=843ed618b18ec7a0cbb50f38984374540da016c41a8df8042bb8db19964d4495
+
+          echo "Signing key certificate SHA-256: $actual_cert"
+          if [[ "$actual_cert" != "$expected_cert" ]]; then
+            echo "The configured keystore is not the key used by the installed POS7 tablet app." >&2
+            echo "Restore the original POS7_KEYSTORE_BASE64 GitHub secret before building." >&2
+            exit 1
+          fi
+
           echo "POS7_KEYSTORE_PATH=$keyfile" >> "$GITHUB_ENV"
+
       - name: Build tablet release APK
         working-directory: android-project/POS7_v485_Dual_APK_Project/Tablet/POS7_v485_APK_Project
         env:
@@ -57,20 +90,30 @@ jobs:
           POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
           POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
         run: gradle --no-daemon clean assembleRelease
+
       - name: Verify APK package, version, and existing signature
         run: |
           set -euo pipefail
           apk=android-project/POS7_v485_Dual_APK_Project/Tablet/POS7_v485_APK_Project/app/build/outputs/apk/release/app-release.apk
           test -s "$apk"
+
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
+
           badging=$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk")
-          printf '%s\n' "$badging" | grep -Fq "package: name='com.sokkarzeyedeh.pos7' versionCode='4850773' versionName='485.7.73'"
-          expected=84:3e:d6:18:b1:8e:c7:a0:cb:b5:0f:38:98:43:74:54:0d:a0:16:c4:1a:8d:f8:04:2b:b8:db:19:96:4d:44:95
-          actual=$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$apk" | awk -F": " "/SHA-256 digest:/ {print tolower(\$2); exit}")
+          printf '%s\n' "$badging" |
+            grep -Fq "package: name='com.sokkarzeyedeh.pos7' versionCode='4850773' versionName='485.7.73'"
+
+          expected=843ed618b18ec7a0cbb50f38984374540da016c41a8df8042bb8db19964d4495
+          actual=$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$apk" |
+            awk -F': ' '/certificate SHA-256 digest:/ {print tolower($2); exit}' |
+            tr -d ':')
+
+          echo "Built APK certificate SHA-256: $actual"
           if [ "$actual" != "$expected" ]; then
-            echo "APK signature does not match the installed POS7 signing certificate" >&2
+            echo "APK signature does not match the installed POS7 signing certificate." >&2
             exit 1
           fi
+
       - name: Upload tablet APK
         uses: actions/upload-artifact@v4
         with:
