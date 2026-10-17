@@ -1,18 +1,18 @@
-name: Build POS7 Tablet APK v485.7.85
+name: Build POS7 Owner Phone APK v485.7.80
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
     paths:
-      - 'POS7_v485.7.85_APK_Project.zip'
+      - 'POS7_Owner_Phone_v485.7.80_APK_Project.zip'
       - '.github/workflows/main.yml'
 
 permissions:
   contents: read
 
 jobs:
-  build-tablet:
+  build-owner-phone:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -35,16 +35,24 @@ jobs:
       - name: Install Android SDK packages
         run: |
           set -euo pipefail
-          sdkmanager --install 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
           yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager --install 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
 
-      - name: Extract tablet project
+      - name: Extract phone project and verify source
         run: |
           set -euo pipefail
-          unzip -q POS7_v485.7.85_APK_Project.zip -d android-project
-          test -f android-project/POS7_v485.7.85_APK_Project/Tablet/POS7_v485_APK_Project/settings.gradle
+          archive='POS7_Owner_Phone_v485.7.80_APK_Project.zip'
+          test -s "$archive"
+          mkdir -p android-project
+          unzip -q "$archive" -d android-project
+          project='android-project/POS7_Owner_Phone_v485.7.80_APK_Project'
+          test -f "$project/settings.gradle"
+          test -f "$project/app/src/main/assets/index.html"
+          grep -Fq 'هاتف المالك 485.7.80' "$project/app/src/main/assets/index.html"
+          grep -Fq "applicationId 'com.sokkarzeyedeh.pos7owner'" "$project/app/build.gradle"
+          grep -Fq 'versionCode 4850780' "$project/app/build.gradle"
 
-      - name: Configure and verify existing POS7 signing key
+      - name: Configure and verify the existing POS7 signing key
         env:
           POS7_KEYSTORE_BASE64: ${{ secrets.POS7_KEYSTORE_BASE64 }}
           POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
@@ -65,42 +73,38 @@ jobs:
           expected='843ed618b18ec7a0cbb50f38984374540da016c41a8df8042bb8db19964d4495'
           actual=$(keytool -exportcert -keystore "$keyfile" -storepass "$POS7_KEYSTORE_PASSWORD" -alias "$POS7_KEY_ALIAS" | sha256sum | awk '{print $1}')
           if [[ "$actual" != "$expected" ]]; then
-            echo 'Signing key certificate does not match the installed POS7 tablet certificate; refusing to build an incompatible update.' >&2
+            echo 'The signing certificate does not match the existing POS7 certificate; refusing to build an incompatible update.' >&2
             exit 1
           fi
           echo "POS7_KEYSTORE_PATH=$keyfile" >> "$GITHUB_ENV"
           echo "POS7_SIGNING_CERT_SHA256=$actual" >> "$GITHUB_ENV"
 
-      - name: Build signed tablet release APK
-        working-directory: android-project/POS7_v485.7.85_APK_Project/Tablet/POS7_v485_APK_Project
+      - name: Build signed owner phone APK
+        working-directory: android-project/POS7_Owner_Phone_v485.7.80_APK_Project
         env:
           POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
           POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
           POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
-        run: gradle --no-daemon clean assembleRelease
+        run: gradle --no-daemon --stacktrace clean assembleRelease
 
       - name: Verify APK package, version, and signing certificate
         run: |
           set -euo pipefail
-          apk=android-project/POS7_v485.7.85_APK_Project/Tablet/POS7_v485_APK_Project/app/build/outputs/apk/release/app-release.apk
+          apk='android-project/POS7_Owner_Phone_v485.7.80_APK_Project/app/build/outputs/apk/release/app-release.apk'
           test -s "$apk"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
           badging=$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk")
-          printf '%s\n' "$badging" | grep -Fq "package: name='com.sokkarzeyedeh.pos7' versionCode='4850785' versionName='485.7.85'"
+          printf '%s\n' "$badging" | grep -Fq "package: name='com.sokkarzeyedeh.pos7owner' versionCode='4850780' versionName='485.7.80'"
           actual=$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2; exit}' | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')
-          if [[ -z "$actual" ]]; then
-            echo 'Could not read the APK signer certificate fingerprint.' >&2
-            exit 1
-          fi
-          if [[ "$actual" != "$POS7_SIGNING_CERT_SHA256" ]]; then
-            echo "APK signer fingerprint ($actual) differs from the configured release keystore ($POS7_SIGNING_CERT_SHA256)." >&2
+          if [[ -z "$actual" || "$actual" != "$POS7_SIGNING_CERT_SHA256" ]]; then
+            echo 'The built APK signing certificate does not match the existing POS7 certificate.' >&2
             exit 1
           fi
 
-      - name: Upload signed tablet APK
+      - name: Upload signed owner phone APK
         uses: actions/upload-artifact@v4
         with:
-          name: POS7-Tablet-v485.7.85-update-apk
-          path: android-project/POS7_v485.7.85_APK_Project/Tablet/POS7_v485_APK_Project/app/build/outputs/apk/release/app-release.apk
+          name: POS7-Owner-Phone-v485.7.80-update-apk
+          path: android-project/POS7_Owner_Phone_v485.7.80_APK_Project/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
