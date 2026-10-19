@@ -53,6 +53,8 @@ jobs:
           grep -Fq 'هاتف المالك 485.7.98' "$project/app/src/main/assets/index.html"
           grep -Fq "applicationId 'com.sokkarzeyedeh.pos7owner'" "$project/app/build.gradle"
           grep -Fq 'versionCode 4850798' "$project/app/build.gradle"
+          sed -i 's/minSdk 23/minSdk 24/' "$project/app/build.gradle"
+          grep -Fq 'minSdk 24' "$project/app/build.gradle"
           if [[ -z "$POS7_FIREBASE_JSON_BASE64" ]]; then
             echo 'Missing GitHub Actions secret POS7_FIREBASE_JSON_BASE64.' >&2
             exit 1
