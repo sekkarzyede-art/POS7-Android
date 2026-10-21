@@ -1,11 +1,11 @@
-name: Build POS7 Owner Phone v485.7.105 Push Notifications APK
+name: Build POS7 Owner Phone v485.7.106 Notification Tap Routing APK
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
     paths:
-      - 'POS7_Owner_Phone_v485.7.105_Report_Search_APK_Project.zip'
+      - 'POS7_Owner_Phone_v485.7.106_Notification_Open_APK_Project.zip'
       - '.github/workflows/main.yml'
 
 permissions:
@@ -43,16 +43,16 @@ jobs:
           POS7_FIREBASE_JSON_BASE64: ${{ secrets.POS7_FIREBASE_JSON_BASE64 }}
         run: |
           set -euo pipefail
-          archive='POS7_Owner_Phone_v485.7.105_Report_Search_APK_Project.zip'
+          archive='POS7_Owner_Phone_v485.7.106_Notification_Open_APK_Project.zip'
           test -s "$archive"
           mkdir -p android-project
           unzip -q "$archive" -d android-project
-          project='android-project/POS7_Owner_Phone_v485.7.105_Report_Search_APK_Project'
+          project='android-project/POS7_Owner_Phone_v485.7.106_Notification_Open_APK_Project'
           test -f "$project/settings.gradle"
           test -f "$project/app/src/main/assets/index.html"
-          grep -Fq 'هاتف المالك 485.7.105' "$project/app/src/main/assets/index.html"
+          grep -Fq 'هاتف المالك 485.7.106' "$project/app/src/main/assets/index.html"
           grep -Fq "applicationId 'com.sokkarzeyedeh.pos7owner'" "$project/app/build.gradle"
-          grep -Fq 'versionCode 48507105' "$project/app/build.gradle"
+          grep -Fq 'versionCode 48507106' "$project/app/build.gradle"
           if [[ -z "$POS7_FIREBASE_JSON_BASE64" ]]; then
             echo 'Missing GitHub Actions secret POS7_FIREBASE_JSON_BASE64.' >&2
             exit 1
@@ -90,7 +90,7 @@ jobs:
           echo "POS7_SIGNING_CERT_SHA256=$actual" >> "$GITHUB_ENV"
 
       - name: Build signed owner phone APK
-        working-directory: android-project/POS7_Owner_Phone_v485.7.105_Report_Search_APK_Project
+        working-directory: android-project/POS7_Owner_Phone_v485.7.106_Notification_Open_APK_Project
         env:
           POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
           POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
@@ -100,11 +100,11 @@ jobs:
       - name: Verify APK package, version, and signing certificate
         run: |
           set -euo pipefail
-          apk='android-project/POS7_Owner_Phone_v485.7.105_Report_Search_APK_Project/app/build/outputs/apk/release/app-release.apk'
+          apk='android-project/POS7_Owner_Phone_v485.7.106_Notification_Open_APK_Project/app/build/outputs/apk/release/app-release.apk'
           test -s "$apk"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
           badging=$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk")
-          printf '%s\n' "$badging" | grep -Fq "package: name='com.sokkarzeyedeh.pos7owner' versionCode='48507105' versionName='485.7.105'"
+          printf '%s\n' "$badging" | grep -Fq "package: name='com.sokkarzeyedeh.pos7owner' versionCode='48507106' versionName='485.7.106'"
           actual=$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2; exit}' | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')
           if [[ -z "$actual" || "$actual" != "$POS7_SIGNING_CERT_SHA256" ]]; then
             echo 'The built APK signing certificate does not match the existing POS7 certificate.' >&2
@@ -114,7 +114,7 @@ jobs:
       - name: Upload signed owner phone APK
         uses: actions/upload-artifact@v4
         with:
-          name: POS7-Owner-Phone-v485.7.105-Push-Notifications-update-apk
-          path: android-project/POS7_Owner_Phone_v485.7.105_Report_Search_APK_Project/app/build/outputs/apk/release/app-release.apk
+          name: POS7-Owner-Phone-v485.7.106-Notification-Open-update-apk
+          path: android-project/POS7_Owner_Phone_v485.7.106_Notification_Open_APK_Project/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
