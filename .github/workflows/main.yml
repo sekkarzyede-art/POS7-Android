@@ -1,11 +1,11 @@
-name: Build POS7 Owner Phone APK v485.7.112
+name: Build POS7 Owner Phone APK v485.7.115
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
     paths:
-      - 'POS7_Owner_Phone_v485.7.112_APK_Project.zip'
+      - 'POS7_Owner_Phone_v485.7.115_APK_Project.zip'
       - '.github/workflows/main.yml'
 
 permissions:
@@ -41,8 +41,8 @@ jobs:
       - name: Extract owner phone project
         run: |
           set -euo pipefail
-          unzip -q POS7_Owner_Phone_v485.7.112_APK_Project.zip -d android-project
-          test -f android-project/POS7_Owner_Phone_v485.7.112_APK_Project/Android/POS7_Owner_Phone/settings.gradle
+          unzip -q POS7_Owner_Phone_v485.7.115_APK_Project.zip -d android-project
+          test -f android-project/POS7_Owner_Phone_v485.7.115_APK_Project/Android/POS7_Owner_Phone/settings.gradle
 
       - name: Configure and verify POS7 signing key
         env:
@@ -72,7 +72,7 @@ jobs:
           echo "POS7_SIGNING_CERT_SHA256=$actual" >> "$GITHUB_ENV"
 
       - name: Build signed owner phone APK
-        working-directory: android-project/POS7_Owner_Phone_v485.7.112_APK_Project/Android/POS7_Owner_Phone
+        working-directory: android-project/POS7_Owner_Phone_v485.7.115_APK_Project/Android/POS7_Owner_Phone
         env:
           POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
           POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
@@ -82,11 +82,11 @@ jobs:
       - name: Verify APK package, version, and signing certificate
         run: |
           set -euo pipefail
-          apk=android-project/POS7_Owner_Phone_v485.7.112_APK_Project/Android/POS7_Owner_Phone/app/build/outputs/apk/release/app-release.apk
+          apk=android-project/POS7_Owner_Phone_v485.7.115_APK_Project/Android/POS7_Owner_Phone/app/build/outputs/apk/release/app-release.apk
           test -s "$apk"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
           badging=$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk")
-          printf '%s\n' "$badging" | grep -Fq "package: name='com.sokkarzeyedeh.pos7owner' versionCode='48507112' versionName='485.7.112'"
+          printf '%s\n' "$badging" | grep -Fq "package: name='com.sokkarzeyedeh.pos7owner' versionCode='48507115' versionName='485.7.115'"
           actual=$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2; exit}' | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')
           if [[ "$actual" != "$POS7_SIGNING_CERT_SHA256" ]]; then
             echo 'APK signer differs from the configured POS7 signing key.' >&2
@@ -96,7 +96,7 @@ jobs:
       - name: Upload signed owner phone APK
         uses: actions/upload-artifact@v4
         with:
-          name: POS7-Owner-Phone-v485.7.112-apk
-          path: android-project/POS7_Owner_Phone_v485.7.112_APK_Project/Android/POS7_Owner_Phone/app/build/outputs/apk/release/app-release.apk
+          name: POS7-Owner-Phone-v485.7.115-apk
+          path: android-project/POS7_Owner_Phone_v485.7.115_APK_Project/Android/POS7_Owner_Phone/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
