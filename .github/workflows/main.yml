@@ -1,4 +1,4 @@
-name: Build POS7 Owner Phone APK v485.7.117
+name: Build POS7 Owner Phone APK v485.7.119 (HTML 485.7.109)
 
 on:
   workflow_dispatch:
@@ -42,7 +42,7 @@ jobs:
         id: extract
         run: |
           set -euo pipefail
-          expected_code='48507117'
+          expected_code='48507119'
           matches=()
           while IFS= read -r -d '' archive; do
             entries="$(unzip -Z1 "$archive")"
@@ -54,7 +54,7 @@ jobs:
           done < <(find . -type f -iname '*.zip' ! -path './.git/*' -print0)
           if [[ ${#matches[@]} -ne 1 ]]; then
             echo "Expected exactly one owner phone project ZIP for version $expected_code; found ${#matches[@]}." >&2
-            echo 'Upload the POS7_Owner_Phone_v485.7.117_APK_Project.zip file to the repository root, then rerun this workflow.' >&2
+            echo 'Upload the POS7_Owner_Phone_v485.7.119_APK_Project.zip file to the repository root, then rerun this workflow.' >&2
             find . -type f -iname '*.zip' ! -path './.git/*' -print >&2
             exit 1
           fi
@@ -72,6 +72,27 @@ jobs:
           test -f "$project_dir/app/src/main/java/com/sokkarzeyedeh/pos7owner/MainActivity.java"
           echo "project_dir=$project_dir" >> "$GITHUB_OUTPUT"
           echo "apk_path=$project_dir/app/build/outputs/apk/release/app-release.apk" >> "$GITHUB_OUTPUT"
+
+      - name: Configure Firebase for FCM
+        env:
+          POS7_FIREBASE_JSON_BASE64: ${{ secrets.POS7_FIREBASE_JSON_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${POS7_FIREBASE_JSON_BASE64:-}" ]]; then
+            echo 'Missing GitHub Actions secret: POS7_FIREBASE_JSON_BASE64' >&2
+            exit 1
+          fi
+          project_dir="$(find android-project -type f -name settings.gradle -print -quit)"
+          project_dir="${project_dir%/settings.gradle}"
+          printf '%s' "$POS7_FIREBASE_JSON_BASE64" | base64 --decode > "$project_dir/app/google-services.json"
+          test -s "$project_dir/app/google-services.json"
+          python3 - "$project_dir/app/google-services.json" <<'PYJSON'
+          import json,sys
+          data=json.load(open(sys.argv[1],encoding='utf-8'))
+          packages=[x.get('client_info',{}).get('android_client_info',{}).get('package_name') for x in data.get('client',[])]
+          if 'com.sokkarzeyedeh.pos7owner' not in packages:
+              raise SystemExit('Firebase google-services.json does not include com.sokkarzeyedeh.pos7owner')
+          PYJSON
 
       - name: Configure and verify POS7 signing key
         env:
@@ -117,7 +138,7 @@ jobs:
           test -s "$APK_PATH"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK_PATH"
           badging=$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK_PATH")
-          printf '%s\n' "$badging" | grep -Fq "package: name='com.sokkarzeyedeh.pos7owner' versionCode='48507117' versionName='485.7.117'"
+          printf '%s\n' "$badging" | grep -Fq "package: name='com.sokkarzeyedeh.pos7owner' versionCode='48507119' versionName='485.7.119'"
           actual=$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK_PATH" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2; exit}' | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')
           if [[ "$actual" != "$POS7_SIGNING_CERT_SHA256" ]]; then
             echo 'APK signer differs from the configured POS7 signing key.' >&2
@@ -127,7 +148,7 @@ jobs:
       - name: Upload signed owner phone APK
         uses: actions/upload-artifact@v4
         with:
-          name: POS7-Owner-Phone-v485.7.117-apk
+          name: POS7-Owner-Phone-v485.7.119-apk
           path: ${{ steps.extract.outputs.apk_path }}
           if-no-files-found: error
           retention-days: 14
