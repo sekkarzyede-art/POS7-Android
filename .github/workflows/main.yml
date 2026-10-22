@@ -1,4 +1,4 @@
-name: Build POS7 Owner Phone 485.7.124 Red
+name: Build POS7 Owner Phone 485.7.126 Blue
 
 on:
   workflow_dispatch:
@@ -6,12 +6,13 @@ on:
       installed_version_code:
         description: 'Optional: installed APK versionCode (new build will be higher)'
         required: false
-        default: '48507123'
+        default: '48507125'
         type: string
+
   push:
     branches: [main]
     paths:
-      - 'POS7_Owner_Phone_v485.7.124_Red_APK_Project.zip'
+      - 'POS7_Owner_Phone_v485.7.126_Blue_APK_Project.zip'
       - '.github/workflows/main.yml'
 
 permissions:
@@ -21,6 +22,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+
     steps:
       - uses: actions/checkout@v4
 
@@ -38,24 +40,31 @@ jobs:
       - name: Install Android SDK
         run: sdkmanager --install 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
 
-      - name: Extract this exact red project
+      - name: Extract POS7 version 485.7.126
         run: |
           set -euo pipefail
-          test -f POS7_Owner_Phone_v485.7.124_Red_APK_Project.zip
+          test -f POS7_Owner_Phone_v485.7.126_Blue_APK_Project.zip
+
           python3 - <<'PY'
           from pathlib import Path
           import zipfile
+
           target = Path('android-project').resolve()
-          with zipfile.ZipFile('POS7_Owner_Phone_v485.7.124_Red_APK_Project.zip') as z:
+
+          with zipfile.ZipFile('POS7_Owner_Phone_v485.7.126_Blue_APK_Project.zip') as z:
               for item in z.infolist():
                   if not (target / item.filename).resolve().is_relative_to(target):
                       raise SystemExit('Unsafe archive path')
               z.extractall(target)
+
           root = target / 'POS7_Owner_Phone'
           assert (root / 'settings.gradle').is_file()
-          assert "versionName '485.7.124-red'" in (root / 'app/build.gradle').read_text()
+          assert "versionName '485.7.126-blue'" in (root / 'app/build.gradle').read_text()
+
           html = (root / 'app/src/main/assets/index.html').read_text()
-          assert 'v485.7.124 Red' in html
+          assert 'v485.7.126 Blue' in html
+          assert 'shareImageBase64' in html
+          assert (root / 'app/src/main/res/xml/share_paths.xml').is_file()
           assert 'dailyProfitCard()+dailyCashCard()+dailyWalletCard()' in html
           PY
 
@@ -65,16 +74,28 @@ jobs:
         run: |
           python3 - <<'PY'
           import os
-          raw = os.environ.get('INSTALLED_CODE', '').strip() or '48507123'
+
+          raw = os.environ.get('INSTALLED_CODE', '').strip() or '48507125'
+
           if not raw.isascii() or not raw.isdecimal():
               raise SystemExit('installed_version_code must contain English digits only')
-          code = max(48507124 + int(os.environ['GITHUB_RUN_NUMBER']), int(raw) + 1)
+
+          code = max(
+              48507126 + int(os.environ['GITHUB_RUN_NUMBER']),
+              int(raw) + 1
+          )
+
           if code > 2100000000:
               raise SystemExit('versionCode exceeds the Android release limit')
+
           with open(os.environ['GITHUB_ENV'], 'a') as f:
               f.write(f'POS7_VERSION_CODE={code}\n')
+
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
-              f.write(f'POS7 485.7.124-red; versionCode: **{code}**; UI 485.7.124 Red: daily profit, cash and carried wallet balance.\n')
+              f.write(
+                  f'POS7 485.7.126-blue; versionCode: **{code}**; '
+                  'UI 485.7.126 Blue: daily profit, cash and carried wallet balance.\n'
+              )
           PY
 
       - name: Configure existing Firebase app
@@ -82,13 +103,28 @@ jobs:
           POS7_FIREBASE_JSON_BASE64: ${{ secrets.POS7_FIREBASE_JSON_BASE64 }}
         run: |
           set -euo pipefail
-          test -n "$POS7_FIREBASE_JSON_BASE64" || { echo 'Missing POS7_FIREBASE_JSON_BASE64'; exit 1; }
-          printf '%s' "$POS7_FIREBASE_JSON_BASE64" | base64 --decode > android-project/POS7_Owner_Phone/app/google-services.json
+
+          test -n "$POS7_FIREBASE_JSON_BASE64" || {
+            echo 'Missing POS7_FIREBASE_JSON_BASE64'
+            exit 1
+          }
+
+          printf '%s' "$POS7_FIREBASE_JSON_BASE64" | base64 --decode \
+            > android-project/POS7_Owner_Phone/app/google-services.json
+
           python3 - <<'PY'
           import json
+
           with open('android-project/POS7_Owner_Phone/app/google-services.json') as f:
               data = json.load(f)
-          packages = [x.get('client_info', {}).get('android_client_info', {}).get('package_name') for x in data.get('client', [])]
+
+          packages = [
+              x.get('client_info', {})
+               .get('android_client_info', {})
+               .get('package_name')
+              for x in data.get('client', [])
+          ]
+
           if 'com.sokkarzeyedeh.pos7owner' not in packages:
               raise SystemExit('Firebase package mismatch')
           PY
@@ -101,18 +137,32 @@ jobs:
           POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
         run: |
           set -euo pipefail
+
           for key in POS7_KEYSTORE_BASE64 POS7_KEYSTORE_PASSWORD POS7_KEY_ALIAS POS7_KEY_PASSWORD; do
-            if [[ -z "${!key:-}" ]]; then echo "Missing secret: $key"; exit 1; fi
+            if [[ -z "${!key:-}" ]]; then
+              echo "Missing secret: $key"
+              exit 1
+            fi
           done
+
           keyfile="$RUNNER_TEMP/pos7-release.jks"
           umask 077
+
           printf '%s' "$POS7_KEYSTORE_BASE64" | base64 --decode > "$keyfile"
+
           expected='843ed618b18ec7a0cbb50f38984374540da016c41a8df8042bb8db19964d4495'
-          actual=$(keytool -exportcert -keystore "$keyfile" -storepass:env POS7_KEYSTORE_PASSWORD -alias "$POS7_KEY_ALIAS" | sha256sum | awk '{print $1}')
+
+          actual=$(keytool -exportcert \
+            -keystore "$keyfile" \
+            -storepass:env POS7_KEYSTORE_PASSWORD \
+            -alias "$POS7_KEY_ALIAS" \
+            | sha256sum | awk '{print $1}')
+
           if [[ "$actual" != "$expected" ]]; then
             echo 'Wrong signing certificate: refusing a build that cannot update the original POS7 app.'
             exit 1
           fi
+
           echo "POS7_KEYSTORE_PATH=$keyfile" >> "$GITHUB_ENV"
           echo "POS7_SIGNING_CERT_SHA256=$actual" >> "$GITHUB_ENV"
 
@@ -127,22 +177,36 @@ jobs:
       - name: Verify APK identity, version and signer
         run: |
           set -euo pipefail
+
           apk='android-project/POS7_Owner_Phone/app/build/outputs/apk/release/app-release.apk'
           sdk_tools="$ANDROID_HOME/build-tools/35.0.0"
+
           "$sdk_tools/apksigner" verify --verbose "$apk"
+
           "$sdk_tools/aapt" dump badging "$apk" > "$RUNNER_TEMP/pos7-badging.txt"
-          grep -F "package: name='com.sokkarzeyedeh.pos7owner' versionCode='$POS7_VERSION_CODE' versionName='485.7.124-red'" "$RUNNER_TEMP/pos7-badging.txt"
-          actual=$("$sdk_tools/apksigner" verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2}' | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')
+
+          grep -F "package: name='com.sokkarzeyedeh.pos7owner' versionCode='$POS7_VERSION_CODE' versionName='485.7.126-blue'" \
+            "$RUNNER_TEMP/pos7-badging.txt"
+
+          actual=$("$sdk_tools/apksigner" verify --print-certs "$apk" \
+            | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2}' \
+            | tr -d ':[:space:]' \
+            | tr '[:upper:]' '[:lower:]')
+
           test "$actual" = "$POS7_SIGNING_CERT_SHA256"
+
           mkdir -p output
-          cp "$apk" output/POS7_Owner_Phone_v485.7.124_Red.apk
+          cp "$apk" output/POS7_Owner_Phone_v485.7.126_Blue.apk
+
           sha256sum output/*.apk > output/SHA256SUMS.txt
-          printf 'versionName=485.7.124-red\nversionCode=%s\ncertificateSHA256=%s\n' "$POS7_VERSION_CODE" "$actual" > output/build-info.txt
+
+          printf 'versionName=485.7.126-blue\nversionCode=%s\ncertificateSHA256=%s\n' \
+            "$POS7_VERSION_CODE" "$actual" > output/build-info.txt
 
       - name: Downloadable signed APK
         uses: actions/upload-artifact@v4
         with:
-          name: POS7-Owner-Phone-485.7.124-Red-${{ env.POS7_VERSION_CODE }}
+          name: POS7-Owner-Phone-485.7.126-Blue-${{ env.POS7_VERSION_CODE }}
           path: output/
           if-no-files-found: error
           retention-days: 30
