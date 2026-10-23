@@ -1,18 +1,19 @@
-name: Build POS7 Tablet 485.7.130 Google Drive
+
+name: Build POS7 Tablet 485.7.130 Android Drive
 
 on:
   workflow_dispatch:
     inputs:
       installed_version_code:
-        description: 'Optional: installed APK versionCode (new build will be higher)'
+        description: "Installed APK versionCode"
         required: false
-        default: '48507104'
+        default: "48507259"
         type: string
 
   push:
     branches: [main]
     paths:
-      - 'POS7_Tablet_v485.7.130_APK_Project.zip'
+      - 'POS7_Tablet_v485.7.130_Drive_Android_Project.zip'
       - '.github/workflows/main.yml'
 
 permissions:
@@ -43,49 +44,71 @@ jobs:
 
       - name: Install Android SDK
         run: |
-          sdkmanager --install 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
+          sdkmanager --install \
+            'platform-tools' \
+            'platforms;android-35' \
+            'build-tools;35.0.0'
 
-      - name: Extract tablet project
+      - name: Extract POS7 project
         run: |
           set -euo pipefail
-          test -f POS7_Tablet_v485.7.130_APK_Project.zip
-
           python3 - <<'PY'
           from pathlib import Path
           import zipfile
 
+          archive = Path(
+              'POS7_Tablet_v485.7.130_Drive_Android_Project.zip'
+          )
+          if not archive.is_file():
+              raise SystemExit('Missing project ZIP')
+
           target = Path('android-project').resolve()
 
-          with zipfile.ZipFile('POS7_Tablet_v485.7.130_APK_Project.zip') as z:
+          with zipfile.ZipFile(archive) as z:
               for item in z.infolist():
-                  if not (target / item.filename).resolve().is_relative_to(target):
-                      raise SystemExit('Unsafe archive path')
+                  dest = (target / item.filename).resolve()
+                  if not dest.is_relative_to(target):
+                      raise SystemExit('Unsafe ZIP path')
               z.extractall(target)
 
           root = target / 'POS7_Tablet'
-
           assert (root / 'settings.gradle').is_file()
-          assert "versionName '485.7.130'" in (root / 'app/build.gradle').read_text()
+          assert (root / 'app/build.gradle').is_file()
 
-          html = (root / 'app/src/main/assets/index.html').read_text()
+          manifest = root / 'app/src/main/AndroidManifest.xml'
+          assert manifest.is_file()
 
+          activity = root / (
+              'app/src/main/java/com/sokkarzeyedeh/'
+              'pos7/MainActivity.java'
+          )
+          code = activity.read_text()
+          assert 'ACTION_CREATE_DOCUMENT' in code
+          assert 'ACTION_OPEN_DOCUMENT_TREE' in code
+
+          html = (
+              root / 'app/src/main/assets/index.html'
+          ).read_text()
           assert '485.7.130' in html
-          assert 'pos130Drive' in html and 'shareBackupJson' in html
-          assert 'details.contains(b)' in html
-          assert (root / 'app/src/main/res/xml/backup_paths.xml').is_file()
+
+          print('POS7 Android project verified')
           PY
 
-      - name: Set an upgrade-compatible versionCode
+      - name: Set upgrade-compatible versionCode
         env:
           INSTALLED_CODE: ${{ inputs.installed_version_code }}
         run: |
+          set -euo pipefail
           python3 - <<'PY'
           import os
 
-          raw = os.environ.get('INSTALLED_CODE', '').strip() or '48507104'
+          raw = (
+              os.environ.get('INSTALLED_CODE', '').strip()
+              or '48507259'
+          )
 
           if not raw.isascii() or not raw.isdecimal():
-              raise SystemExit('installed_version_code must contain English digits only')
+              raise SystemExit('Invalid installed versionCode')
 
           code = max(
               48507130 + int(os.environ['GITHUB_RUN_NUMBER']),
@@ -93,20 +116,15 @@ jobs:
           )
 
           if code > 2100000000:
-              raise SystemExit('versionCode exceeds the Android release limit')
+              raise SystemExit('versionCode too large')
 
           with open(os.environ['GITHUB_ENV'], 'a') as f:
               f.write(f'POS7_VERSION_CODE={code}\n')
 
-          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
-              f.write(
-                  f'POS7 485.7.130; versionCode: **{code}**; '
-                  'Google Drive backups, WhatsApp file sharing, '
-                  'supplier date filter.\n'
-              )
+          print('New versionCode:', code)
           PY
 
-      - name: Verify original POS7 release certificate
+      - name: Verify original POS7 signing certificate
         env:
           POS7_KEYSTORE_BASE64: ${{ secrets.POS7_KEYSTORE_BASE64 }}
           POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
@@ -115,9 +133,14 @@ jobs:
         run: |
           set -euo pipefail
 
-          for key in POS7_KEYSTORE_BASE64 POS7_KEYSTORE_PASSWORD POS7_KEY_ALIAS POS7_KEY_PASSWORD; do
+          for key in \
+            POS7_KEYSTORE_BASE64 \
+            POS7_KEYSTORE_PASSWORD \
+            POS7_KEY_ALIAS \
+            POS7_KEY_PASSWORD
+          do
             if [[ -z "${!key:-}" ]]; then
-              echo "Missing secret: $key"
+              echo "Missing signing secret: $key"
               exit 1
             fi
           done
@@ -125,9 +148,10 @@ jobs:
           keyfile="$RUNNER_TEMP/pos7-release.jks"
           umask 077
 
-          printf '%s' "$POS7_KEYSTORE_BASE64" | base64 --decode > "$keyfile"
+          printf '%s' "$POS7_KEYSTORE_BASE64" \
+            | base64 --decode > "$keyfile"
 
-          expected='843ed618b18ec7a0cbb50f38984374540da016c41a8df8042bb8db19964d4495'
+          expected="843ed618b18ec7a0cbb50f38984374540da016c41a8df8042bb8db19964d4495"
 
           actual=$(keytool -exportcert \
             -keystore "$keyfile" \
@@ -136,69 +160,81 @@ jobs:
             | sha256sum | awk '{print $1}')
 
           if [[ "$actual" != "$expected" ]]; then
-            echo 'Wrong signing certificate: refusing a build that cannot update the original POS7 app.'
+            echo "Wrong POS7 signing certificate"
             exit 1
           fi
 
-          echo "POS7_KEYSTORE_PATH=$keyfile" >> "$GITHUB_ENV"
-          echo "POS7_SIGNING_CERT_SHA256=$actual" >> "$GITHUB_ENV"
+          echo "POS7_KEYSTORE_PATH=$keyfile" \
+            >> "$GITHUB_ENV"
 
-          sha1=$(keytool -exportcert \
-            -keystore "$keyfile" \
-            -storepass:env POS7_KEYSTORE_PASSWORD \
-            -alias "$POS7_KEY_ALIAS" \
-            | sha1sum | awk '{print $1}')
+          echo "POS7_SIGNING_CERT_SHA256=$actual" \
+            >> "$GITHUB_ENV"
 
-          echo "Google Cloud Android OAuth SHA-1: $sha1" >> "$GITHUB_STEP_SUMMARY"
+          echo "Original signing certificate verified"
 
-      - name: Align Kotlin libraries (fix duplicate classes)
+      - name: Align Kotlin dependencies
         run: |
-          python3 - <<'PYFIX'
+          python3 - <<'PY'
           from pathlib import Path
 
-          p = Path('android-project/POS7_Tablet/app/build.gradle')
-          text = p.read_text()
+          p = Path(
+              'android-project/POS7_Tablet/app/build.gradle'
+          )
+          s = p.read_text()
+
           marker = 'POS7_KOTLIN_ALIGNMENT_130'
 
-          if marker not in text:
-              text += "\n// " + marker + "\n"
-              text += "dependencies {\n"
-              text += "    implementation enforcedPlatform('org.jetbrains.kotlin:kotlin-bom:1.8.22')\n"
+          if marker not in s:
+              s += '\n// ' + marker + '\n'
+              s += 'dependencies {\n'
+              s += (
+                  "    implementation enforcedPlatform("
+                  "'org.jetbrains.kotlin:kotlin-bom:1.8.22')\n"
+              )
 
-              for module in [
+              for module in (
                   'kotlin-stdlib',
                   'kotlin-stdlib-jdk7',
                   'kotlin-stdlib-jdk8'
-              ]:
-                  text += f"    implementation 'org.jetbrains.kotlin:{module}:1.8.22'\n"
+              ):
+                  s += (
+                      "    implementation "
+                      f"'org.jetbrains.kotlin:{module}:1.8.22'\n"
+                  )
 
-              text += "}\n"
-              p.write_text(text)
-          PYFIX
+              s += '}\n'
+              p.write_text(s)
+          PY
 
-      - name: Build signed release
+      - name: Build signed release APK
         working-directory: android-project/POS7_Tablet
         env:
           POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
           POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
           POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
-        run: gradle --no-daemon clean assembleRelease
+        run: |
+          gradle --no-daemon clean assembleRelease
 
-      - name: Verify APK identity, version and signer
+      - name: Verify APK identity and signature
         run: |
           set -euo pipefail
 
-          apk='android-project/POS7_Tablet/app/build/outputs/apk/release/app-release.apk'
-          sdk_tools="$ANDROID_HOME/build-tools/35.0.0"
+          apk="android-project/POS7_Tablet/app/build/outputs/apk/release/app-release.apk"
+          sdk="$ANDROID_HOME/build-tools/35.0.0"
 
-          "$sdk_tools/apksigner" verify --verbose "$apk"
+          "$sdk/apksigner" verify --verbose "$apk"
 
-          "$sdk_tools/aapt" dump badging "$apk" > "$RUNNER_TEMP/pos7-badging.txt"
+          "$sdk/aapt" dump badging "$apk" \
+            > "$RUNNER_TEMP/pos7-badging.txt"
 
-          grep -F "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.130'" "$RUNNER_TEMP/pos7-badging.txt"
+          grep -F \
+            "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.130'" \
+            "$RUNNER_TEMP/pos7-badging.txt"
 
-          actual=$("$sdk_tools/apksigner" verify --print-certs "$apk" \
-            | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2}' \
+          actual=$("$sdk/apksigner" verify \
+            --print-certs "$apk" \
+            | awk -F': ' \
+              '/Signer #1 certificate SHA-256 digest:/ {print $2}' \
             | tr -d ':[:space:]' \
             | tr '[:upper:]' '[:lower:]')
 
@@ -206,17 +242,21 @@ jobs:
 
           mkdir -p output
 
-          cp "$apk" output/POS7_Tablet_v485.7.130.apk
+          cp "$apk" \
+            output/POS7_Tablet_v485.7.130_Android_Drive.apk
 
-          sha256sum output/*.apk > output/SHA256SUMS.txt
+          sha256sum output/*.apk \
+            > output/SHA256SUMS.txt
 
-          printf 'versionName=485.7.130\nversionCode=%s\ncertificateSHA256=%s\n' \
-            "$POS7_VERSION_CODE" "$actual" > output/build-info.txt
+          printf \
+            'versionName=485.7.130\nversionCode=%s\ncertificateSHA256=%s\n' \
+            "$POS7_VERSION_CODE" "$actual" \
+            > output/build-info.txt
 
-      - name: Downloadable signed APK
+      - name: Upload signed APK
         uses: actions/upload-artifact@v4
         with:
-          name: POS7-Tablet-485.7.130-${{ env.POS7_VERSION_CODE }}
+          name: POS7-Tablet-Android-Drive-${{ env.POS7_VERSION_CODE }}
           path: output/
           if-no-files-found: error
           retention-days: 30
