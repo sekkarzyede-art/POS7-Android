@@ -1,4 +1,4 @@
-name: Build POS7 Tablet Kotlin Fixed
+name: Build POS7 Tablet 485.7.130 Startup Fixed
 
 on:
   workflow_dispatch:
@@ -10,10 +10,9 @@ on:
         type: string
 
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
-      - 'POS7_Tablet_v485.7.130_Kotlin_Fixed_Project.zip'
+      - 'POS7_Tablet_v485.7.130_Startup_Fixed_Project.zip'
       - '.github/workflows/main.yml'
 
 permissions:
@@ -52,17 +51,15 @@ jobs:
       - name: Extract POS7 project
         run: |
           set -euo pipefail
-
           python3 - <<'PY'
           from pathlib import Path
           import zipfile
 
           archive = Path(
-              'POS7_Tablet_v485.7.130_Kotlin_Fixed_Project.zip'
+              'POS7_Tablet_v485.7.130_Startup_Fixed_Project.zip'
           )
-
           if not archive.is_file():
-              raise SystemExit('Project ZIP not found')
+              raise SystemExit('Project ZIP missing')
 
           target = Path('android-project').resolve()
 
@@ -74,19 +71,117 @@ jobs:
               z.extractall(target)
 
           root = target / 'POS7_Tablet'
-
-          if not (root / 'settings.gradle').is_file():
-              raise SystemExit('settings.gradle missing')
-
-          if not (root / 'app/build.gradle').is_file():
-              raise SystemExit('app/build.gradle missing')
+          assert (root / 'settings.gradle').is_file()
+          assert (root / 'app/build.gradle').is_file()
 
           html = root / 'app/src/main/assets/index.html'
+          assert html.is_file()
+          assert '485.7.130' in html.read_text()
 
-          if not html.is_file():
-              raise SystemExit('POS7 HTML missing')
+          print('Project extracted successfully')
+          PY
 
-          print('POS7 project extracted successfully')
+      - name: Validate JavaScript before building
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+          import subprocess
+          import tempfile
+
+          class Scripts(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.inside = False
+                  self.external = False
+                  self.parts = []
+                  self.scripts = []
+
+              def handle_starttag(self, tag, attrs):
+                  if tag.lower() == 'script':
+                      self.inside = True
+                      self.external = 'src' in dict(attrs)
+                      self.parts = []
+
+              def handle_data(self, data):
+                  if self.inside:
+                      self.parts.append(data)
+
+              def handle_endtag(self, tag):
+                  if tag.lower() == 'script' and self.inside:
+                      if not self.external:
+                          self.scripts.append(''.join(self.parts))
+                      self.inside = False
+
+          path = Path(
+              'android-project/POS7_Tablet/'
+              'app/src/main/assets/index.html'
+          )
+
+          parser = Scripts()
+          parser.feed(path.read_text())
+
+          checked = 0
+
+          for script in parser.scripts:
+              if not script.strip():
+                  continue
+
+              with tempfile.NamedTemporaryFile(
+                  mode='w',
+                  suffix='.js'
+              ) as f:
+                  f.write(script)
+                  f.flush()
+
+                  result = subprocess.run(
+                      ['node', '--check', f.name],
+                      capture_output=True,
+                      text=True
+                  )
+
+                  if result.returncode:
+                      raise SystemExit(
+                          'JavaScript syntax error:\n'
+                          + result.stderr
+                      )
+
+              checked += 1
+
+          print(f'Validated {checked} JavaScript blocks')
+          PY
+
+      - name: Fix Kotlin dependency conflicts
+        working-directory: android-project/POS7_Tablet
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('app/build.gradle')
+          s = p.read_text()
+
+          marker = 'POS7_KOTLIN_FIX_FINAL'
+
+          if marker not in s:
+              fix = [
+                  '',
+                  '// POS7_KOTLIN_FIX_FINAL',
+                  'configurations.configureEach {',
+                  '    resolutionStrategy.eachDependency { details ->',
+                  "        if (details.requested.group == 'org.jetbrains.kotlin' &&",
+                  "            details.requested.name.startsWith('kotlin-stdlib')) {",
+                  "            details.useVersion '1.8.22'",
+                  '        }',
+                  '    }',
+                  '}',
+                  ''
+              ]
+              s += '\n'.join(fix)
+              p.write_text(s)
+
+          print('Kotlin versions aligned')
           PY
 
       - name: Set upgrade versionCode
@@ -94,7 +189,6 @@ jobs:
           INSTALLED_CODE: ${{ inputs.installed_version_code }}
         run: |
           set -euo pipefail
-
           python3 - <<'PY'
           import os
 
@@ -119,40 +213,6 @@ jobs:
               f.write(f'POS7_VERSION_CODE={code}\n')
 
           print('New versionCode:', code)
-          PY
-
-      - name: Fix Kotlin dependency conflicts
-        working-directory: android-project/POS7_Tablet
-        run: |
-          set -euo pipefail
-
-          python3 - <<'PY'
-          from pathlib import Path
-
-          p = Path('app/build.gradle')
-          s = p.read_text()
-
-          marker = 'POS7_KOTLIN_FIX_FINAL'
-
-          if marker not in s:
-              fix = [
-                  '',
-                  '// POS7_KOTLIN_FIX_FINAL',
-                  'configurations.configureEach {',
-                  '    resolutionStrategy.eachDependency { details ->',
-                  "        if (details.requested.group == 'org.jetbrains.kotlin' &&",
-                  "            details.requested.name.startsWith('kotlin-stdlib')) {",
-                  "            details.useVersion '1.8.22'",
-                  '        }',
-                  '    }',
-                  '}',
-                  ''
-              ]
-
-              s += '\n'.join(fix)
-              p.write_text(s)
-
-          print('Kotlin dependency alignment configured')
           PY
 
       - name: Verify original POS7 signing certificate
@@ -220,10 +280,7 @@ jobs:
           apk="android-project/POS7_Tablet/app/build/outputs/apk/release/app-release.apk"
           sdk="$ANDROID_HOME/build-tools/35.0.0"
 
-          if [[ ! -f "$apk" ]]; then
-            echo "APK not found"
-            exit 1
-          fi
+          test -f "$apk"
 
           "$sdk/apksigner" verify --verbose "$apk"
 
@@ -241,15 +298,12 @@ jobs:
             | tr -d ':[:space:]' \
             | tr '[:upper:]' '[:lower:]')
 
-          if [[ "$actual" != "$POS7_SIGNING_CERT_SHA256" ]]; then
-            echo "APK certificate mismatch"
-            exit 1
-          fi
+          test "$actual" = "$POS7_SIGNING_CERT_SHA256"
 
           mkdir -p output
 
           cp "$apk" \
-            output/POS7_Tablet_v485.7.130_Kotlin_Fixed.apk
+            output/POS7_Tablet_v485.7.130_Startup_Fixed.apk
 
           sha256sum output/*.apk \
             > output/SHA256SUMS.txt
@@ -259,12 +313,12 @@ jobs:
             "$POS7_VERSION_CODE" "$actual" \
             > output/build-info.txt
 
-          echo "APK verification completed"
+          echo "APK verified"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: POS7-Tablet-Kotlin-Fixed-${{ env.POS7_VERSION_CODE }}
+          name: POS7-Tablet-Startup-Fixed-${{ env.POS7_VERSION_CODE }}
           path: output/
           if-no-files-found: error
           retention-days: 30
