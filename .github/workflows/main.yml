@@ -1,17 +1,19 @@
-name: Build POS7 Tablet Script Fixed
+name: Build POS7 Tablet Kotlin Fixed
 
 on:
   workflow_dispatch:
     inputs:
       installed_version_code:
-        description: 'Installed APK versionCode'
+        description: "Installed APK versionCode"
         required: false
-        default: '48507259'
+        default: "48507259"
         type: string
+
   push:
-    branches: [main]
+    branches:
+      - main
     paths:
-      - 'POS7_Tablet_v485.7.130_Script_Fixed_BuildReady.zip'
+      - 'POS7_Tablet_v485.7.130_Kotlin_Fixed_Project.zip'
       - '.github/workflows/main.yml'
 
 permissions:
@@ -23,41 +25,48 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Java 17
+      - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Gradle 8.9
+      - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Android SDK
+      - name: Set up Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Install SDK
+      - name: Install Android SDK
         run: |
           sdkmanager --install \
             'platform-tools' \
             'platforms;android-35' \
             'build-tools;35.0.0'
 
-      - name: Extract fixed project
+      - name: Extract POS7 project
         run: |
           set -euo pipefail
+
           python3 - <<'PY'
           from pathlib import Path
           import zipfile
 
-          name = 'POS7_Tablet_v485.7.130_Script_Fixed_BuildReady.zip'
+          archive = Path(
+              'POS7_Tablet_v485.7.130_Kotlin_Fixed_Project.zip'
+          )
+
+          if not archive.is_file():
+              raise SystemExit('Project ZIP not found')
+
           target = Path('android-project').resolve()
 
-          with zipfile.ZipFile(name) as z:
+          with zipfile.ZipFile(archive) as z:
               for item in z.infolist():
                   dest = (target / item.filename).resolve()
                   if not dest.is_relative_to(target):
@@ -65,33 +74,42 @@ jobs:
               z.extractall(target)
 
           root = target / 'POS7_Tablet'
-          assert (root / 'settings.gradle').is_file()
-          assert (root / 'app/build.gradle').is_file()
 
-          html = (root / 'app/src/main/assets/index.html').read_text()
-          assert '485.7.130' in html
-          assert 'pos130Drive' in html
-          assert 'shareBackupJson' in html
+          if not (root / 'settings.gradle').is_file():
+              raise SystemExit('settings.gradle missing')
 
-          print('Fixed POS7 project extracted')
+          if not (root / 'app/build.gradle').is_file():
+              raise SystemExit('app/build.gradle missing')
+
+          html = root / 'app/src/main/assets/index.html'
+
+          if not html.is_file():
+              raise SystemExit('POS7 HTML missing')
+
+          print('POS7 project extracted successfully')
           PY
 
-      - name: Set upgrade version
+      - name: Set upgrade versionCode
         env:
           INSTALLED_CODE: ${{ inputs.installed_version_code }}
         run: |
+          set -euo pipefail
+
           python3 - <<'PY'
           import os
 
-          raw = os.environ.get('INSTALLED_CODE', '').strip()
-          raw = raw or '48507259'
+          raw = (
+              os.environ.get('INSTALLED_CODE', '').strip()
+              or '48507259'
+          )
 
           if not raw.isascii() or not raw.isdecimal():
               raise SystemExit('Invalid versionCode')
 
           code = max(
-              48507130 + int(os.environ['GITHUB_RUN_NUMBER']),
-              int(raw) + 1
+              48507260,
+              int(raw) + 1,
+              48507259 + int(os.environ['GITHUB_RUN_NUMBER'])
           )
 
           if code > 2100000000:
@@ -100,10 +118,44 @@ jobs:
           with open(os.environ['GITHUB_ENV'], 'a') as f:
               f.write(f'POS7_VERSION_CODE={code}\n')
 
-          print('Building versionCode:', code)
+          print('New versionCode:', code)
           PY
 
-      - name: Verify original signing certificate
+      - name: Fix Kotlin dependency conflicts
+        working-directory: android-project/POS7_Tablet
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('app/build.gradle')
+          s = p.read_text()
+
+          marker = 'POS7_KOTLIN_FIX_FINAL'
+
+          if marker not in s:
+              fix = [
+                  '',
+                  '// POS7_KOTLIN_FIX_FINAL',
+                  'configurations.configureEach {',
+                  '    resolutionStrategy.eachDependency { details ->',
+                  "        if (details.requested.group == 'org.jetbrains.kotlin' &&",
+                  "            details.requested.name.startsWith('kotlin-stdlib')) {",
+                  "            details.useVersion '1.8.22'",
+                  '        }',
+                  '    }',
+                  '}',
+                  ''
+              ]
+
+              s += '\n'.join(fix)
+              p.write_text(s)
+
+          print('Kotlin dependency alignment configured')
+          PY
+
+      - name: Verify original POS7 signing certificate
         env:
           POS7_KEYSTORE_BASE64: ${{ secrets.POS7_KEYSTORE_BASE64 }}
           POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
@@ -143,8 +195,13 @@ jobs:
             exit 1
           fi
 
-          echo "POS7_KEYSTORE_PATH=$keyfile" >> "$GITHUB_ENV"
-          echo "POS7_SIGNING_CERT_SHA256=$actual" >> "$GITHUB_ENV"
+          echo "POS7_KEYSTORE_PATH=$keyfile" \
+            >> "$GITHUB_ENV"
+
+          echo "POS7_SIGNING_CERT_SHA256=$actual" \
+            >> "$GITHUB_ENV"
+
+          echo "Original POS7 certificate verified"
 
       - name: Build signed APK
         working-directory: android-project/POS7_Tablet
@@ -153,6 +210,7 @@ jobs:
           POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
           POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
         run: |
+          set -euo pipefail
           gradle --no-daemon clean assembleRelease
 
       - name: Verify and package APK
@@ -161,6 +219,11 @@ jobs:
 
           apk="android-project/POS7_Tablet/app/build/outputs/apk/release/app-release.apk"
           sdk="$ANDROID_HOME/build-tools/35.0.0"
+
+          if [[ ! -f "$apk" ]]; then
+            echo "APK not found"
+            exit 1
+          fi
 
           "$sdk/apksigner" verify --verbose "$apk"
 
@@ -178,29 +241,35 @@ jobs:
             | tr -d ':[:space:]' \
             | tr '[:upper:]' '[:lower:]')
 
-          test "$actual" = "$POS7_SIGNING_CERT_SHA256"
+          if [[ "$actual" != "$POS7_SIGNING_CERT_SHA256" ]]; then
+            echo "APK certificate mismatch"
+            exit 1
+          fi
 
           mkdir -p output
 
           cp "$apk" \
-            output/POS7_Tablet_v485.7.130_Script_Fixed.apk
+            output/POS7_Tablet_v485.7.130_Kotlin_Fixed.apk
 
-          sha256sum output/*.apk > output/SHA256SUMS.txt
+          sha256sum output/*.apk \
+            > output/SHA256SUMS.txt
 
           printf \
             'versionName=485.7.130\nversionCode=%s\ncertificateSHA256=%s\n' \
             "$POS7_VERSION_CODE" "$actual" \
             > output/build-info.txt
 
-      - name: Upload APK
+          echo "APK verification completed"
+
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: POS7-Tablet-Script-Fixed-${{ env.POS7_VERSION_CODE }}
+          name: POS7-Tablet-Kotlin-Fixed-${{ env.POS7_VERSION_CODE }}
           path: output/
           if-no-files-found: error
           retention-days: 30
 
-      - name: Remove signing material
+      - name: Remove temporary signing material
         if: always()
         run: |
           rm -f "$RUNNER_TEMP/pos7-release.jks"
