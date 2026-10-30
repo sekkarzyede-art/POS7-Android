@@ -1,5 +1,5 @@
 
-name: Build POS7 Tablet 485.7.180 Phone_Receipt_Sync_Fix
+name: Build POS7 Tablet 485.7.181 Stable_JSONB_Sync_Fix
 
 on:
   workflow_dispatch:
@@ -7,13 +7,13 @@ on:
       installed_version_code:
         description: "Installed APK versionCode"
         required: false
-        default: "48507780"
+        default: "48507781"
         type: string
 
   push:
     branches: [main]
     paths:
-      - 'POS7_Tablet_v485.7.180_Phone_Receipt_Sync_Fix_Project.zip'
+      - 'POS7_Tablet_v485.7.181_Stable_JSONB_Sync_Fix_Project.zip'
       - '.github/workflows/main.yml'
 
 permissions:
@@ -57,7 +57,7 @@ jobs:
           import zipfile
 
           archive = Path(
-              'POS7_Tablet_v485.7.180_Phone_Receipt_Sync_Fix_Project.zip'
+              'POS7_Tablet_v485.7.181_Stable_JSONB_Sync_Fix_Project.zip'
           )
           if not archive.is_file():
               raise SystemExit('Project ZIP missing')
@@ -89,8 +89,8 @@ jobs:
           assert 'pos171-fixes' in text and 'pos172PrintBalance' in text
           assert 'smallestScreenSize|screenLayout' in (root / 'app/src/main/AndroidManifest.xml').read_text()
           assert 'تحميل 15 آخرين' in text and 'saveIndependentBackup' in text
-          assert "POS7_APP_VERSION='485.7.180'" in text
-          assert "versionName '485.7.180'" in (root / 'app/build.gradle').read_text()
+          assert "POS7_APP_VERSION='485.7.181'" in text
+          assert "versionName '485.7.181'" in (root / 'app/build.gradle').read_text()
 
           print('Project extracted successfully')
           PY
@@ -99,9 +99,11 @@ jobs:
         working-directory: android-project/POS7_Tablet
         run: python3 ci/validate.py
 
-      - name: Test receipt deduplication and cloud patch batching
+      - name: Test receipt deduplication, stable JSONB comparison and patch batching
         working-directory: android-project/POS7_Tablet
-        run: node ci/test_sync.js
+        run: |
+          node ci/test_sync.js
+          node ci/test_stable_compare.js
 
       - name: Set upgrade versionCode
         env:
@@ -113,16 +115,16 @@ jobs:
 
           raw = (
               os.environ.get('INSTALLED_CODE', '').strip()
-              or '48507780'
+              or '48507781'
           )
 
           if not raw.isascii() or not raw.isdecimal():
               raise SystemExit('Invalid versionCode')
 
           code = max(
-              48507781,
+              48507782,
               int(raw) + 1,
-              48507780 + int(os.environ['GITHUB_RUN_NUMBER'])
+              48507781 + int(os.environ['GITHUB_RUN_NUMBER'])
           )
 
           if code > 2100000000:
@@ -207,7 +209,7 @@ jobs:
             > "$RUNNER_TEMP/pos7-badging.txt"
 
           grep -F \
-            "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.180'" \
+            "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.181'" \
             "$RUNNER_TEMP/pos7-badging.txt"
 
           actual=$("$sdk/apksigner" verify \
@@ -222,13 +224,13 @@ jobs:
           mkdir -p output
 
           cp "$apk" \
-            output/POS7_Tablet_v485.7.180_Phone_Receipt_Sync_Fix.apk
+            output/POS7_Tablet_v485.7.181_Stable_JSONB_Sync_Fix.apk
 
           sha256sum output/*.apk \
             > output/SHA256SUMS.txt
 
           printf \
-            'versionName=485.7.180\nversionCode=%s\ncertificateSHA256=%s\n' \
+            'versionName=485.7.181\nversionCode=%s\ncertificateSHA256=%s\n' \
             "$POS7_VERSION_CODE" "$actual" \
             > output/build-info.txt
 
@@ -237,7 +239,7 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: POS7-Tablet-485.7.180-${{ env.POS7_VERSION_CODE }}
+          name: POS7-Tablet-485.7.181-${{ env.POS7_VERSION_CODE }}
           path: output/
           if-no-files-found: error
           retention-days: 30
