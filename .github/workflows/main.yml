@@ -1,4 +1,4 @@
-name: Build POS7 Tablet 485.7.172 Cash_Receipts_Layout
+name: Build POS7 Tablet 485.7.176 Baskets_Dialog_Fix
 
 on:
   workflow_dispatch:
@@ -6,13 +6,13 @@ on:
       installed_version_code:
         description: "Installed APK versionCode"
         required: false
-        default: "48507719"
+        default: "48507759"
         type: string
 
   push:
     branches: [main]
     paths:
-      - 'POS7_Tablet_v485.7.172_Cash_Receipts_Layout_Project.zip'
+      - 'POS7_Tablet_v485.7.176_Baskets_Dialog_Fix_Project.zip'
       - '.github/workflows/main.yml'
 
 permissions:
@@ -56,7 +56,7 @@ jobs:
           import zipfile
 
           archive = Path(
-              'POS7_Tablet_v485.7.172_Cash_Receipts_Layout_Project.zip'
+              'POS7_Tablet_v485.7.176_Baskets_Dialog_Fix_Project.zip'
           )
           if not archive.is_file():
               raise SystemExit('Project ZIP missing')
@@ -81,11 +81,13 @@ jobs:
           assert 'pos151Periods' in text
           assert 'pos165-resume-presentation' in text
           assert 'pos172-layout' in text and 'pos172-print-default' in text
+          assert 'pos173-three-baskets' in text and 'pos175-arrange-sales' in text
+          assert 'pos176-product-dialog-fix-script' in text
           assert 'pos171-fixes' in text and 'pos172PrintBalance' in text
           assert 'smallestScreenSize|screenLayout' in (root / 'app/src/main/AndroidManifest.xml').read_text()
           assert 'تحميل 15 آخرين' in text and 'saveIndependentBackup' in text
-          assert "POS7_APP_VERSION='485.7.172'" in text
-          assert "versionName '485.7.172'" in (root / 'app/build.gradle').read_text()
+          assert "POS7_APP_VERSION='485.7.176'" in text
+          assert "versionName '485.7.176'" in (root / 'app/build.gradle').read_text()
 
           print('Project extracted successfully')
           PY
@@ -104,16 +106,16 @@ jobs:
 
           raw = (
               os.environ.get('INSTALLED_CODE', '').strip()
-              or '48507719'
+              or '48507759'
           )
 
           if not raw.isascii() or not raw.isdecimal():
               raise SystemExit('Invalid versionCode')
 
           code = max(
-              48507720,
+              48507760,
               int(raw) + 1,
-              48507719 + int(os.environ['GITHUB_RUN_NUMBER'])
+              48507759 + int(os.environ['GITHUB_RUN_NUMBER'])
           )
 
           if code > 2100000000:
@@ -198,7 +200,7 @@ jobs:
             > "$RUNNER_TEMP/pos7-badging.txt"
 
           grep -F \
-            "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.172'" \
+            "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.176'" \
             "$RUNNER_TEMP/pos7-badging.txt"
 
           actual=$("$sdk/apksigner" verify \
@@ -213,13 +215,13 @@ jobs:
           mkdir -p output
 
           cp "$apk" \
-            output/POS7_Tablet_v485.7.172_Cash_Receipts_Layout.apk
+            output/POS7_Tablet_v485.7.176_Baskets_Dialog_Fix.apk
 
           sha256sum output/*.apk \
             > output/SHA256SUMS.txt
 
           printf \
-            'versionName=485.7.172\nversionCode=%s\ncertificateSHA256=%s\n' \
+            'versionName=485.7.176\nversionCode=%s\ncertificateSHA256=%s\n' \
             "$POS7_VERSION_CODE" "$actual" \
             > output/build-info.txt
 
@@ -228,7 +230,7 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: POS7-Tablet-485.7.172-${{ env.POS7_VERSION_CODE }}
+          name: POS7-Tablet-485.7.176-${{ env.POS7_VERSION_CODE }}
           path: output/
           if-no-files-found: error
           retention-days: 30
