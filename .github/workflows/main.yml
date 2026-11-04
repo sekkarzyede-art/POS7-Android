@@ -1,19 +1,19 @@
 
-name: Build POS7 Tablet 485.7.187 Sync_And_Exit_Guard
+name: Build POS7 Owner Phone 485.7.130 Notifications
 
 on:
   workflow_dispatch:
     inputs:
       installed_version_code:
-        description: "Installed APK versionCode"
+        description: "Current installed APK versionCode"
         required: false
-        default: "48507931"
+        default: "48507254"
         type: string
 
   push:
     branches: [main]
     paths:
-      - 'POS7_Tablet_v485.7.187_Sync_And_Exit_Guard_Project.zip'
+      - 'POS7_Phone_130.zip'
       - '.github/workflows/main.yml'
 
 permissions:
@@ -49,91 +49,75 @@ jobs:
             'platforms;android-35' \
             'build-tools;35.0.0'
 
-      - name: Extract POS7 project
+      - name: Extract phone project
         run: |
           set -euo pipefail
-          python3 - <<'PY'
+          python3 - <<'PYEXTRACT'
           from pathlib import Path
           import zipfile
 
-          archive = Path(
-              'POS7_Tablet_v485.7.187_Sync_And_Exit_Guard_Project.zip'
-          )
-          if not archive.is_file():
-              raise SystemExit('Project ZIP missing')
-
+          source = Path('POS7_Phone_130.zip')
           target = Path('android-project').resolve()
 
-          with zipfile.ZipFile(archive) as z:
+          if not source.is_file():
+              raise SystemExit('Missing POS7_Phone_130.zip')
+
+          with zipfile.ZipFile(source) as z:
               for item in z.infolist():
                   dest = (target / item.filename).resolve()
                   if not dest.is_relative_to(target):
                       raise SystemExit('Unsafe ZIP path')
               z.extractall(target)
 
-          root = target / 'POS7_Tablet'
-          assert (root / 'settings.gradle').is_file()
-          assert (root / 'app/build.gradle').is_file()
+          root = target / 'POS7_Owner_Phone'
+          gradle = (root / 'app/build.gradle').read_text()
+          html = (root / 'app/src/main/assets/index.html').read_text()
+          manifest = (root / 'app/src/main/AndroidManifest.xml').read_text()
 
-          html = root / 'app/src/main/assets/index.html'
-          assert html.is_file()
-          text = html.read_text()
-          assert 'pos151-script' in text and 'pos150-report-paging' in text
-          assert 'pos151Periods' in text
-          assert 'pos165-resume-presentation' in text
-          assert 'pos172-layout' in text and 'pos172-print-default' in text
-          assert 'pos173-three-baskets' in text and 'pos175-arrange-sales' in text
-          assert 'pos176-product-dialog-fix-script' in text
-          assert 'pos178-date' in text and 'pos178CloseBasket' in text
-          assert 'pos177SyncDiagnostics' in text
-          assert 'pos171-fixes' in text and 'pos172PrintBalance' in text
-          assert 'smallestScreenSize|screenLayout' in (root / 'app/src/main/AndroidManifest.xml').read_text()
-          assert 'تحميل 15 آخرين' in text and 'saveIndependentBackup' in text
-          assert 'pos185-invoice-save-diagnostics' in text and 'pos185Diag' in text
-          assert 'pos186IdleSync' in text and 'pos186-save-probe-autofold' in text
-          assert 'saveScheduledBackup' in text and 'pos7OnScheduledBackupResult' in text
-          assert 'POS7_HTML_READONLY_PREVIEW' not in text
-          assert "POS7_APP_VERSION='485.7.187'" in text
-          assert 'pos187-safe-navigation-and-sync' in text and 'pos187DiscardCurrentSaleBasket' in text
-          assert "versionName '485.7.187'" in (root / 'app/build.gradle').read_text()
+          assert "applicationId 'com.sokkarzeyedeh.pos7owner'" in gradle
+          assert "versionName '485.7.130-blue'" in gradle
 
-          print('Project extracted successfully')
-          PY
+          assert 'cashPurchasePartyByPayment' in html
+          assert 'shareImageBase64' in html
+          assert 'dailyProfitCard()+dailyCashCard()+dailyWalletCard()' in html
 
-      - name: Validate JavaScript before building
-        working-directory: android-project/POS7_Tablet
-        run: python3 ci/validate.py
+          java = root / (
+              'app/src/main/java/com/sokkarzeyedeh/'
+              'pos7owner'
+          )
 
-      - name: Test receipt deduplication, stable JSONB comparison and patch batching
-        working-directory: android-project/POS7_Tablet
-        run: |
-          node ci/test_sync.js
-          node ci/test_stable_compare.js
-          node ci/test_backup_folder.js
-          node ci/test_save_profile.js
-          node ci/test_auto_sync_v186.js
-          node ci/test_navigation_v187.js
+          assert (java / 'Pos7MessagingService.java').is_file()
+          assert 'testNativeNotifications' in (
+              java / 'MainActivity.java'
+          ).read_text()
 
-      - name: Set upgrade versionCode
+          assert (
+              'com.google.firebase.messaging.'
+              'default_notification_channel_id'
+          ) in manifest
+
+          print('POS7 phone project verified')
+          PYEXTRACT
+
+      - name: Set upgrade-compatible versionCode
         env:
           INSTALLED_CODE: ${{ inputs.installed_version_code }}
         run: |
           set -euo pipefail
-          python3 - <<'PY'
+          python3 - <<'PYCODE'
           import os
 
           raw = (
               os.environ.get('INSTALLED_CODE', '').strip()
-              or '48507931'
+              or '48507254'
           )
 
           if not raw.isascii() or not raw.isdecimal():
-              raise SystemExit('Invalid versionCode')
+              raise SystemExit('Invalid installed versionCode')
 
           code = max(
-              48507932,
-              int(raw) + 1,
-              48507931 + int(os.environ['GITHUB_RUN_NUMBER'])
+              48507255 + int(os.environ['GITHUB_RUN_NUMBER']),
+              int(raw) + 1
           )
 
           if code > 2100000000:
@@ -143,9 +127,55 @@ jobs:
               f.write(f'POS7_VERSION_CODE={code}\n')
 
           print('New versionCode:', code)
-          PY
+          PYCODE
 
-      - name: Verify original POS7 signing certificate
+      - name: Configure original Firebase
+        env:
+          POS7_FIREBASE_JSON_BASE64: ${{ secrets.POS7_FIREBASE_JSON_BASE64 }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${POS7_FIREBASE_JSON_BASE64:-}" ]]; then
+            echo 'Missing POS7_FIREBASE_JSON_BASE64'
+            exit 1
+          fi
+
+          printf '%s' "$POS7_FIREBASE_JSON_BASE64" \
+            | base64 --decode \
+            > android-project/POS7_Owner_Phone/app/google-services.json
+
+          python3 - <<'PYFIREBASE'
+          import json
+
+          path = (
+              'android-project/POS7_Owner_Phone/'
+              'app/google-services.json'
+          )
+
+          with open(path) as f:
+              data = json.load(f)
+
+          project = data.get(
+              'project_info', {}
+          ).get('project_id')
+
+          packages = [
+              c.get('client_info', {})
+               .get('android_client_info', {})
+               .get('package_name')
+              for c in data.get('client', [])
+          ]
+
+          if project != 'pos7-owner-notifications':
+              raise SystemExit('Firebase project mismatch')
+
+          if 'com.sokkarzeyedeh.pos7owner' not in packages:
+              raise SystemExit('Firebase package mismatch')
+
+          print('Original Firebase configuration verified')
+          PYFIREBASE
+
+      - name: Verify original signing certificate
         env:
           POS7_KEYSTORE_BASE64: ${{ secrets.POS7_KEYSTORE_BASE64 }}
           POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
@@ -172,16 +202,18 @@ jobs:
           printf '%s' "$POS7_KEYSTORE_BASE64" \
             | base64 --decode > "$keyfile"
 
-          expected="843ed618b18ec7a0cbb50f38984374540da016c41a8df8042bb8db19964d4495"
+          expected='843ed618b18ec7a0cbb50f38984374540da016c41a8df8042bb8db19964d4495'
 
           actual=$(keytool -exportcert \
             -keystore "$keyfile" \
             -storepass:env POS7_KEYSTORE_PASSWORD \
             -alias "$POS7_KEY_ALIAS" \
-            | sha256sum | awk '{print $1}')
+            | sha256sum \
+            | awk '{print $1}')
 
           if [[ "$actual" != "$expected" ]]; then
-            echo "Wrong POS7 signing certificate"
+            echo 'Wrong signing certificate'
+            echo 'Refusing incompatible update'
             exit 1
           fi
 
@@ -191,10 +223,10 @@ jobs:
           echo "POS7_SIGNING_CERT_SHA256=$actual" \
             >> "$GITHUB_ENV"
 
-          echo "Original POS7 certificate verified"
+          echo 'Original POS7 signing certificate verified'
 
-      - name: Build signed APK
-        working-directory: android-project/POS7_Tablet
+      - name: Build signed release APK
+        working-directory: android-project/POS7_Owner_Phone
         env:
           POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
           POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
@@ -203,57 +235,63 @@ jobs:
           set -euo pipefail
           gradle --no-daemon clean assembleRelease
 
-      - name: Verify and package APK
+      - name: Verify APK package and signature
         run: |
           set -euo pipefail
 
-          apk="android-project/POS7_Tablet/app/build/outputs/apk/release/app-release.apk"
-          sdk="$ANDROID_HOME/build-tools/35.0.0"
+          apk='android-project/POS7_Owner_Phone/app/build/outputs/apk/release/app-release.apk'
+
+          sdk_tools="$ANDROID_HOME/build-tools/35.0.0"
 
           test -f "$apk"
 
-          "$sdk/apksigner" verify --verbose "$apk"
+          "$sdk_tools/apksigner" verify \
+            --verbose "$apk"
 
-          "$sdk/aapt" dump badging "$apk" \
+          "$sdk_tools/aapt" dump badging "$apk" \
             > "$RUNNER_TEMP/pos7-badging.txt"
 
           grep -F \
-            "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.187'" \
+            "package: name='com.sokkarzeyedeh.pos7owner' versionCode='$POS7_VERSION_CODE' versionName='485.7.130-blue'" \
             "$RUNNER_TEMP/pos7-badging.txt"
 
-          actual=$("$sdk/apksigner" verify \
-            --print-certs "$apk" \
+          actual=$("$sdk_tools/apksigner" \
+            verify --print-certs "$apk" \
             | awk -F': ' \
               '/Signer #1 certificate SHA-256 digest:/ {print $2}' \
             | tr -d ':[:space:]' \
             | tr '[:upper:]' '[:lower:]')
 
-          test "$actual" = "$POS7_SIGNING_CERT_SHA256"
+          if [[ "$actual" != "$POS7_SIGNING_CERT_SHA256" ]]; then
+            echo 'Final APK signature mismatch'
+            exit 1
+          fi
 
           mkdir -p output
 
           cp "$apk" \
-            output/POS7_Tablet_v485.7.187_Sync_And_Exit_Guard.apk
+            output/POS7_Owner_Phone_v485.7.130_Notifications.apk
 
           sha256sum output/*.apk \
             > output/SHA256SUMS.txt
 
           printf \
-            'versionName=485.7.187\nversionCode=%s\ncertificateSHA256=%s\n' \
+            'versionName=485.7.130-blue\nversionCode=%s\ncertificateSHA256=%s\n' \
             "$POS7_VERSION_CODE" "$actual" \
             > output/build-info.txt
 
-          echo "APK verified"
+          echo 'Signed APK verified successfully'
 
-      - name: Upload APK artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: POS7-Tablet-485.7.187-${{ env.POS7_VERSION_CODE }}
+          name: POS7-Owner-Phone-485.7.130-${{ env.POS7_VERSION_CODE }}
           path: output/
           if-no-files-found: error
           retention-days: 30
 
-      - name: Remove temporary signing material
+      - name: Remove temporary signing files
         if: always()
         run: |
           rm -f "$RUNNER_TEMP/pos7-release.jks"
+          rm -f android-project/POS7_Owner_Phone/app/google-services.json
