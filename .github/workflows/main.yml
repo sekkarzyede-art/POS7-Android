@@ -1,5 +1,5 @@
 
-name: Build POS7 Tablet 485.7.185 Invoice_Save_Performance_Diagnostics
+name: Build POS7 Tablet 485.7.186 Auto_Sync_And_Save_Probe_Fold
 
 on:
   workflow_dispatch:
@@ -7,13 +7,13 @@ on:
       installed_version_code:
         description: "Installed APK versionCode"
         required: false
-        default: "48507785"
+        default: "48507930"
         type: string
 
   push:
     branches: [main]
     paths:
-      - 'POS7_Tablet_v485.7.185_Invoice_Save_Performance_Diagnostics_Project.zip'
+      - 'POS7_Tablet_v485.7.186_Auto_Sync_And_Save_Probe_Fold_Project.zip'
       - '.github/workflows/main.yml'
 
 permissions:
@@ -57,7 +57,7 @@ jobs:
           import zipfile
 
           archive = Path(
-              'POS7_Tablet_v485.7.185_Invoice_Save_Performance_Diagnostics_Project.zip'
+              'POS7_Tablet_v485.7.186_Auto_Sync_And_Save_Probe_Fold_Project.zip'
           )
           if not archive.is_file():
               raise SystemExit('Project ZIP missing')
@@ -90,10 +90,11 @@ jobs:
           assert 'smallestScreenSize|screenLayout' in (root / 'app/src/main/AndroidManifest.xml').read_text()
           assert 'تحميل 15 آخرين' in text and 'saveIndependentBackup' in text
           assert 'pos185-invoice-save-diagnostics' in text and 'pos185Diag' in text
+          assert 'pos186IdleSync' in text and 'pos186-save-probe-autofold' in text
           assert 'saveScheduledBackup' in text and 'pos7OnScheduledBackupResult' in text
           assert 'POS7_HTML_READONLY_PREVIEW' not in text
-          assert "POS7_APP_VERSION='485.7.185'" in text
-          assert "versionName '485.7.185'" in (root / 'app/build.gradle').read_text()
+          assert "POS7_APP_VERSION='485.7.186'" in text
+          assert "versionName '485.7.186'" in (root / 'app/build.gradle').read_text()
 
           print('Project extracted successfully')
           PY
@@ -109,6 +110,7 @@ jobs:
           node ci/test_stable_compare.js
           node ci/test_backup_folder.js
           node ci/test_save_profile.js
+          node ci/test_auto_sync_v186.js
 
       - name: Set upgrade versionCode
         env:
@@ -120,16 +122,16 @@ jobs:
 
           raw = (
               os.environ.get('INSTALLED_CODE', '').strip()
-              or '48507785'
+              or '48507930'
           )
 
           if not raw.isascii() or not raw.isdecimal():
               raise SystemExit('Invalid versionCode')
 
           code = max(
-              48507786,
+              48507931,
               int(raw) + 1,
-              48507785 + int(os.environ['GITHUB_RUN_NUMBER'])
+              48507930 + int(os.environ['GITHUB_RUN_NUMBER'])
           )
 
           if code > 2100000000:
@@ -214,7 +216,7 @@ jobs:
             > "$RUNNER_TEMP/pos7-badging.txt"
 
           grep -F \
-            "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.185'" \
+            "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.186'" \
             "$RUNNER_TEMP/pos7-badging.txt"
 
           actual=$("$sdk/apksigner" verify \
@@ -229,13 +231,13 @@ jobs:
           mkdir -p output
 
           cp "$apk" \
-            output/POS7_Tablet_v485.7.185_Invoice_Save_Performance_Diagnostics.apk
+            output/POS7_Tablet_v485.7.186_Auto_Sync_And_Save_Probe_Fold.apk
 
           sha256sum output/*.apk \
             > output/SHA256SUMS.txt
 
           printf \
-            'versionName=485.7.185\nversionCode=%s\ncertificateSHA256=%s\n' \
+            'versionName=485.7.186\nversionCode=%s\ncertificateSHA256=%s\n' \
             "$POS7_VERSION_CODE" "$actual" \
             > output/build-info.txt
 
@@ -244,7 +246,7 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: POS7-Tablet-485.7.185-${{ env.POS7_VERSION_CODE }}
+          name: POS7-Tablet-485.7.186-${{ env.POS7_VERSION_CODE }}
           path: output/
           if-no-files-found: error
           retention-days: 30
