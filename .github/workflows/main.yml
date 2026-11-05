@@ -1,19 +1,19 @@
 
-name: Build POS7 Tablet 485.7.188 Midnight_Date_Fix
+name: Build POS7 Tablet 485.7.190 Purchase_Return_Button
 
 on:
   workflow_dispatch:
     inputs:
       installed_version_code:
-        description: "Installed tablet APK versionCode (use 48508078 for v187)"
+        description: "Installed tablet APK versionCode"
         required: false
-        default: "48508078"
+        default: "48508229"
         type: string
 
   push:
     branches: [main]
     paths:
-      - 'POS7_Tablet_v485.7.188_Midnight_Date_Fix_Project.zip'
+      - 'POS7_Tablet_v485.7.190_Purchase_Return_Button_Project.zip'
       - '.github/workflows/main.yml'
 
 permissions:
@@ -57,7 +57,7 @@ jobs:
           import zipfile
 
           archive = Path(
-              'POS7_Tablet_v485.7.188_Midnight_Date_Fix_Project.zip'
+              'POS7_Tablet_v485.7.190_Purchase_Return_Button_Project.zip'
           )
           if not archive.is_file():
               raise SystemExit('Project ZIP missing')
@@ -78,35 +78,64 @@ jobs:
           html = root / 'app/src/main/assets/index.html'
           assert html.is_file()
           text = html.read_text()
-          assert 'pos151-script' in text and 'pos150-report-paging' in text
+
+          assert 'pos151-script' in text
+          assert 'pos150-report-paging' in text
           assert 'pos151Periods' in text
           assert 'pos165-resume-presentation' in text
-          assert 'pos172-layout' in text and 'pos172-print-default' in text
-          assert 'pos173-three-baskets' in text and 'pos175-arrange-sales' in text
+          assert 'pos172-layout' in text
+          assert 'pos172-print-default' in text
+          assert 'pos173-three-baskets' in text
+          assert 'pos175-arrange-sales' in text
           assert 'pos176-product-dialog-fix-script' in text
-          assert 'pos178-date' in text and 'pos178CloseBasket' in text
+          assert 'pos178-date' in text
+          assert 'pos178CloseBasket' in text
           assert 'pos177SyncDiagnostics' in text
-          assert 'pos171-fixes' in text and 'pos172PrintBalance' in text
-          assert 'smallestScreenSize|screenLayout' in (root / 'app/src/main/AndroidManifest.xml').read_text()
-          assert 'تحميل 15 آخرين' in text and 'saveIndependentBackup' in text
-          assert 'pos185-invoice-save-diagnostics' in text and 'pos185Diag' in text
-          assert 'pos186IdleSync' in text and 'pos186-save-probe-autofold' in text
-          assert 'saveScheduledBackup' in text and 'pos7OnScheduledBackupResult' in text
-          assert 'POS7_HTML_READONLY_PREVIEW' not in text
-          assert "POS7_APP_VERSION='485.7.188'" in text
-          assert 'pos187-safe-navigation-and-sync' in text and 'pos187DiscardCurrentSaleBasket' in text
-          assert 'pos188-midnight-date-guard' in text
-          assert 'pos188PrepareSaleSave' in text and 'manualDate' in text
-          assert "versionName '485.7.188'" in (root / 'app/build.gradle').read_text()
+          assert 'pos171-fixes' in text
+          assert 'pos172PrintBalance' in text
 
-          print('Project extracted successfully')
+          manifest = (
+              root / 'app/src/main/AndroidManifest.xml'
+          ).read_text()
+
+          assert 'smallestScreenSize|screenLayout' in manifest
+          assert 'تحميل 15 آخرين' in text
+          assert 'saveIndependentBackup' in text
+          assert 'pos185-invoice-save-diagnostics' in text
+          assert 'pos185Diag' in text
+          assert 'pos186IdleSync' in text
+          assert 'pos186-save-probe-autofold' in text
+          assert 'saveScheduledBackup' in text
+          assert 'pos7OnScheduledBackupResult' in text
+          assert 'POS7_HTML_READONLY_PREVIEW' not in text
+
+          assert "POS7_APP_VERSION='485.7.190'" in text
+          assert 'pos187-safe-navigation-and-sync' in text
+          assert 'pos187DiscardCurrentSaleBasket' in text
+          assert 'pos188-midnight-date-guard' in text
+          assert 'pos188PrepareSaleSave' in text
+          assert 'manualDate' in text
+
+          assert 'pos189SupplierPanel' in text
+          assert 'pos189AddSupplierItem' in text
+          assert 'pos190PurchaseButtons' in text
+          assert 'pos190BackToPurchaseItems' in text
+
+          gradle = (
+              root / 'app/build.gradle'
+          ).read_text()
+
+          assert "versionName '485.7.190'" in gradle
+          assert "applicationId 'com.sokkarzeyedeh.pos7'" in gradle
+
+          print('Project verified')
           PY
 
-      - name: Validate JavaScript before building
+      - name: Validate JavaScript
         working-directory: android-project/POS7_Tablet
         run: python3 ci/validate.py
 
-      - name: Test sync, saved basket dates, accounting safeguards and regressions
+      - name: Run POS7 regression tests
         working-directory: android-project/POS7_Tablet
         run: |
           node ci/test_sync.js
@@ -116,6 +145,7 @@ jobs:
           node ci/test_auto_sync_v186.js
           node ci/test_navigation_v188.js
           node ci/test_midnight_v188.js
+          node ci/test_return_button_v190.js
 
       - name: Set upgrade versionCode
         env:
@@ -127,16 +157,16 @@ jobs:
 
           raw = (
               os.environ.get('INSTALLED_CODE', '').strip()
-              or '48508078'
+              or '48508229'
           )
 
           if not raw.isascii() or not raw.isdecimal():
               raise SystemExit('Invalid versionCode')
 
           code = max(
-              48508079,
+              48508230,
               int(raw) + 1,
-              48508078 + int(os.environ['GITHUB_RUN_NUMBER'])
+              48508229 + int(os.environ['GITHUB_RUN_NUMBER'])
           )
 
           if code > 2100000000:
@@ -206,7 +236,7 @@ jobs:
           set -euo pipefail
           gradle --no-daemon clean assembleRelease
 
-      - name: Verify and package APK
+      - name: Verify signed APK
         run: |
           set -euo pipefail
 
@@ -221,7 +251,7 @@ jobs:
             > "$RUNNER_TEMP/pos7-badging.txt"
 
           grep -F \
-            "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.188'" \
+            "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.190'" \
             "$RUNNER_TEMP/pos7-badging.txt"
 
           actual=$("$sdk/apksigner" verify \
@@ -236,13 +266,13 @@ jobs:
           mkdir -p output
 
           cp "$apk" \
-            output/POS7_Tablet_v485.7.188_Midnight_Date_Fix.apk
+            output/POS7_Tablet_v485.7.190_Purchase_Return_Button.apk
 
           sha256sum output/*.apk \
             > output/SHA256SUMS.txt
 
           printf \
-            'versionName=485.7.188\nversionCode=%s\ncertificateSHA256=%s\n' \
+            'versionName=485.7.190\nversionCode=%s\ncertificateSHA256=%s\n' \
             "$POS7_VERSION_CODE" "$actual" \
             > output/build-info.txt
 
@@ -251,7 +281,7 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: POS7-Tablet-485.7.188-${{ env.POS7_VERSION_CODE }}
+          name: POS7-Tablet-485.7.190-${{ env.POS7_VERSION_CODE }}
           path: output/
           if-no-files-found: error
           retention-days: 30
