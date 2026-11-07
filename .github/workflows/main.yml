@@ -1,4 +1,3 @@
-
 name: Build POS7 Tablet Keystore Stage 1
 
 on:
@@ -129,7 +128,7 @@ jobs:
           from pathlib import Path
           import os, re
           content = (Path(os.environ['RUNNER_TEMP']) / 'certificate.txt').read_text('utf-8')
-          expected = '843ED618B18EC7A0CB5B0F38984374540DA016C41A8DF8042BB8DB19964D4495'
+          expected = '843ED618B18EC7A0CBB50F38984374540DA016C41A8DF8042BB8DB19964D4495'
           match = re.search(r'SHA256:\s*([0-9A-Fa-f:]+)', content)
           if not match:
               raise SystemExit('Signing certificate SHA256 not found')
@@ -165,7 +164,7 @@ jobs:
           tmp = Path(os.environ['RUNNER_TEMP'])
           signature = (tmp/'apk-signature.txt').read_text('utf-8')
           badging = (tmp/'apk-badging.txt').read_text('utf-8')
-          expected = '843ED618B18EC7A0CB5B0F38984374540DA016C41A8DF8042BB8DB19964D4495'
+          expected = '843ED618B18EC7A0CBB50F38984374540DA016C41A8DF8042BB8DB19964D4495'
           match = re.search(r'certificate SHA-256 digest:\s*([0-9a-fA-F:]+)', signature, re.I)
           if not match or match.group(1).replace(':','').upper() != expected:
               raise SystemExit('APK signing certificate mismatch')
