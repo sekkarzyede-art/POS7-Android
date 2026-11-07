@@ -9,6 +9,7 @@ on:
         required: false
         default: "48508395"
         type: string
+
   push:
     branches: [main]
     paths:
@@ -24,7 +25,7 @@ jobs:
     timeout-minutes: 35
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Java 17
@@ -33,7 +34,7 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Gradle
+      - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
@@ -50,17 +51,20 @@ jobs:
 
       - name: Extract and validate project
         run: |
+          set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
           from zipfile import ZipFile
 
           archive = Path(
-            "POS7_Tablet_v485.7.207_Keystore_Module_Stage1_Project.zip"
+              "POS7_Tablet_v485.7.207_Keystore_Module_Stage1_Project.zip"
           )
+
           if not archive.is_file():
               raise SystemExit("Project ZIP not found")
 
           root = Path("android-project").resolve()
+
           with ZipFile(archive) as z:
               for item in z.infolist():
                   target = (root / item.filename).resolve()
@@ -69,6 +73,7 @@ jobs:
               z.extractall(root)
 
           project = root / "POS7_Tablet"
+
           required = [
               "settings.gradle",
               "app/build.gradle",
@@ -77,49 +82,60 @@ jobs:
               "app/src/main/java/com/sokkarzeyedeh/pos7/MainActivity.java",
               "app/src/main/java/com/sokkarzeyedeh/pos7/Pos7DeviceIdentity.java",
           ]
+
           for name in required:
               if not (project / name).is_file():
                   raise SystemExit("Missing: " + name)
 
-          gradle = (project / "app/build.gradle").read_text()
-          html = (project / "app/src/main/assets/index.html").read_text()
+          gradle = (
+              project / "app/build.gradle"
+          ).read_text("utf-8")
+
+          html = (
+              project / "app/src/main/assets/index.html"
+          ).read_text("utf-8")
+
           identity = (
               project /
               "app/src/main/java/com/sokkarzeyedeh/pos7/Pos7DeviceIdentity.java"
-          ).read_text()
+          ).read_text("utf-8")
 
           assert "com.sokkarzeyedeh.pos7" in gradle
           assert "versionName '485.7.207'" in gradle
           assert "POS7_APP_VERSION='485.7.207'" in html
           assert "AndroidKeyStore" in identity
           assert "secp256r1" in identity
-          print("Project checks passed")
+
+          print("POS7 project validation passed")
           PY
 
       - name: Configure upgrade-safe versionCode
         env:
           INSTALLED_CODE: ${{ inputs.installed_version_code }}
         run: |
+          set -euo pipefail
           python3 - <<'PY'
           import os
 
-          raw = os.environ.get("INSTALLED_CODE", "").strip()
-          if not raw:
-              raw = "48508395"
+          raw = os.environ.get(
+              "INSTALLED_CODE", ""
+          ).strip() or "48508395"
+
           if not raw.isascii() or not raw.isdecimal():
               raise SystemExit("Invalid installed versionCode")
 
-          installed = int(raw)
           code = max(
               48508396,
-              installed + 1,
+              int(raw) + 1,
               48508395 + int(os.environ["GITHUB_RUN_NUMBER"])
           )
+
           if code > 2100000000:
-              raise SystemExit("versionCode exceeds Android limit")
+              raise SystemExit("Android versionCode limit exceeded")
 
           with open(os.environ["GITHUB_ENV"], "a") as f:
               f.write(f"POS7_VERSION_CODE={code}\n")
+
           print("New versionCode:", code)
           PY
 
@@ -131,6 +147,7 @@ jobs:
           POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
         run: |
           set -euo pipefail
+
           for name in \
             POS7_KEYSTORE_BASE64 \
             POS7_KEYSTORE_PASSWORD \
@@ -144,9 +161,12 @@ jobs:
           done
 
           keyfile="$RUNNER_TEMP/pos7-release.jks"
+
           printf '%s' "$POS7_KEYSTORE_BASE64" \
             | base64 --decode > "$keyfile"
+
           test -s "$keyfile"
+
           echo "POS7_KEYSTORE_PATH=$keyfile" >> "$GITHUB_ENV"
 
           keytool -list -v \
@@ -157,23 +177,44 @@ jobs:
 
           python3 - <<'PY'
           from pathlib import Path
+          import os
           import re
-          text = Path(
-              __import__('os').environ['RUNNER_TEMP'] +
-              '/certificate.txt'
-          ).read_text()
+
+          certificate = Path(
+              os.environ["RUNNER_TEMP"]
+          ) / "certificate.txt"
+
+          content = certificate.read_text("utf-8")
+
           expected = (
               "843ED618B18EC7A0CB5B0F3898437454"
               "0DA016C41A8DF8042BB8DB19964D4495"
           )
+
           match = re.search(
-              r"SHA256:\s*([0-9A-Fa-f:]+)", text
+              r"SHA256:\s*([0-9A-Fa-f:]+)",
+              content
           )
+
           if not match:
-              raise SystemExit("Signing fingerprint missing")
-          actual = match.group(1).replace(":", "").upper()
+              raise SystemExit(
+                  "Signing certificate SHA256 not found"
+              )
+
+          actual = (
+              match.group(1)
+              .replace(":", "")
+              .upper()
+          )
+
+          print("Actual signing SHA256:", actual)
+          print("Expected signing SHA256:", expected)
+
           if actual != expected:
-              raise SystemExit("Original signing certificate mismatch")
+              raise SystemExit(
+                  "Original signing certificate mismatch"
+              )
+
           print("Original signing certificate verified")
           PY
 
@@ -189,7 +230,9 @@ jobs:
       - name: Verify APK signature and package
         run: |
           set -euo pipefail
+
           APK="android-project/POS7_Tablet/app/build/outputs/apk/release/app-release.apk"
+
           test -s "$APK"
 
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
@@ -200,23 +243,34 @@ jobs:
           from pathlib import Path
           import os
           import re
-          text = Path(
-              os.environ["RUNNER_TEMP"] +
-              "/apk-signature.txt"
-          ).read_text()
+
+          content = (
+              Path(os.environ["RUNNER_TEMP"]) /
+              "apk-signature.txt"
+          ).read_text("utf-8")
+
           expected = (
               "843ED618B18EC7A0CB5B0F3898437454"
               "0DA016C41A8DF8042BB8DB19964D4495"
           )
+
           match = re.search(
               r"certificate SHA-256 digest:\s*([0-9a-fA-F:]+)",
-              text, re.I
+              content,
+              re.I
           )
+
           if not match:
               raise SystemExit("APK signer not found")
-          if match.group(1).replace(":", "").upper() != expected:
-              raise SystemExit("APK signing certificate mismatch")
-          print("APK signing verified")
+
+          actual = match.group(1).replace(":", "").upper()
+
+          if actual != expected:
+              raise SystemExit(
+                  "APK signing certificate mismatch"
+              )
+
+          print("APK signature verified")
           PY
 
           "$ANDROID_HOME/build-tools/35.0.0/aapt" \
