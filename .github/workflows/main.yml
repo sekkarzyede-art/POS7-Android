@@ -1,4 +1,4 @@
-name: Build POS7 Tablet Keystore Stage 1
+name: Build POS7 Tablet Keystore Stage 2
 
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'POS7_Tablet_v485.7.207_Keystore_Module_Stage1_Project.zip'
+      - 'POS7_Tablet_v485.7.207_Keystore_Stage2_Local_Test_Project.zip'
       - '.github/workflows/main.yml'
 
 permissions:
@@ -50,7 +50,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           from zipfile import ZipFile
-          archive = Path('POS7_Tablet_v485.7.207_Keystore_Module_Stage1_Project.zip')
+          archive = Path('POS7_Tablet_v485.7.207_Keystore_Stage2_Local_Test_Project.zip')
           if not archive.is_file():
               raise SystemExit('Project ZIP not found at repository root')
           root = Path('android-project').resolve()
@@ -79,6 +79,10 @@ jobs:
           assert "POS7_APP_VERSION='485.7.207'" in html
           assert 'AndroidKeyStore' in identity
           assert 'secp256r1' in identity
+          main_activity = (project / 'app/src/main/java/com/sokkarzeyedeh/pos7/MainActivity.java').read_text('utf-8')
+          assert 'localSelfTest()' in identity
+          assert 'showDeviceIdentityTest' in main_activity
+          assert 'showDeviceIdentityTest' in html
           print('Project source checks passed')
           PY
 
@@ -177,7 +181,7 @@ jobs:
       - name: Publish APK
         uses: actions/upload-artifact@v4
         with:
-          name: POS7_Tablet_v485.7.207_Keystore_Stage1
+          name: POS7_Tablet_v485.7.207_Keystore_Stage2
           path: android-project/POS7_Tablet/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
