@@ -5,11 +5,10 @@ on:
   workflow_dispatch:
     inputs:
       installed_version_code:
-        description: "Current installed APK versionCode"
+        description: 'Current installed APK versionCode'
         required: false
-        default: "48508395"
+        default: '48508395'
         type: string
-
   push:
     branches: [main]
     paths:
@@ -23,7 +22,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 35
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -44,10 +42,8 @@ jobs:
 
       - name: Install Android SDK
         run: |
-          sdkmanager --install \
-            'platform-tools' \
-            'platforms;android-35' \
-            'build-tools;35.0.0'
+          set -euo pipefail
+          sdkmanager --install 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
 
       - name: Extract and validate project
         run: |
@@ -55,58 +51,36 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           from zipfile import ZipFile
-
-          archive = Path(
-              "POS7_Tablet_v485.7.207_Keystore_Module_Stage1_Project.zip"
-          )
-
+          archive = Path('POS7_Tablet_v485.7.207_Keystore_Module_Stage1_Project.zip')
           if not archive.is_file():
-              raise SystemExit("Project ZIP not found")
-
-          root = Path("android-project").resolve()
-
+              raise SystemExit('Project ZIP not found at repository root')
+          root = Path('android-project').resolve()
           with ZipFile(archive) as z:
               for item in z.infolist():
-                  target = (root / item.filename).resolve()
-                  if not target.is_relative_to(root):
-                      raise SystemExit("Unsafe ZIP entry")
+                  dest = (root / item.filename).resolve()
+                  if not dest.is_relative_to(root):
+                      raise SystemExit('Unsafe ZIP entry: ' + item.filename)
               z.extractall(root)
-
-          project = root / "POS7_Tablet"
-
-          required = [
-              "settings.gradle",
-              "app/build.gradle",
-              "app/src/main/AndroidManifest.xml",
-              "app/src/main/assets/index.html",
-              "app/src/main/java/com/sokkarzeyedeh/pos7/MainActivity.java",
-              "app/src/main/java/com/sokkarzeyedeh/pos7/Pos7DeviceIdentity.java",
-          ]
-
-          for name in required:
-              if not (project / name).is_file():
-                  raise SystemExit("Missing: " + name)
-
-          gradle = (
-              project / "app/build.gradle"
-          ).read_text("utf-8")
-
-          html = (
-              project / "app/src/main/assets/index.html"
-          ).read_text("utf-8")
-
-          identity = (
-              project /
-              "app/src/main/java/com/sokkarzeyedeh/pos7/Pos7DeviceIdentity.java"
-          ).read_text("utf-8")
-
-          assert "com.sokkarzeyedeh.pos7" in gradle
+          project = root / 'POS7_Tablet'
+          for rel in (
+              'settings.gradle',
+              'app/build.gradle',
+              'app/src/main/AndroidManifest.xml',
+              'app/src/main/assets/index.html',
+              'app/src/main/java/com/sokkarzeyedeh/pos7/MainActivity.java',
+              'app/src/main/java/com/sokkarzeyedeh/pos7/Pos7DeviceIdentity.java',
+          ):
+              if not (project / rel).is_file():
+                  raise SystemExit('Missing: ' + rel)
+          gradle = (project / 'app/build.gradle').read_text('utf-8')
+          html = (project / 'app/src/main/assets/index.html').read_text('utf-8')
+          identity = (project / 'app/src/main/java/com/sokkarzeyedeh/pos7/Pos7DeviceIdentity.java').read_text('utf-8')
+          assert "applicationId 'com.sokkarzeyedeh.pos7'" in gradle
           assert "versionName '485.7.207'" in gradle
           assert "POS7_APP_VERSION='485.7.207'" in html
-          assert "AndroidKeyStore" in identity
-          assert "secp256r1" in identity
-
-          print("POS7 project validation passed")
+          assert 'AndroidKeyStore' in identity
+          assert 'secp256r1' in identity
+          print('Project source checks passed')
           PY
 
       - name: Configure upgrade-safe versionCode
@@ -116,30 +90,18 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           import os
-
-          raw = os.environ.get(
-              "INSTALLED_CODE", ""
-          ).strip() or "48508395"
-
+          raw = os.environ.get('INSTALLED_CODE', '').strip() or '48508395'
           if not raw.isascii() or not raw.isdecimal():
-              raise SystemExit("Invalid installed versionCode")
-
-          code = max(
-              48508396,
-              int(raw) + 1,
-              48508395 + int(os.environ["GITHUB_RUN_NUMBER"])
-          )
-
+              raise SystemExit('Invalid installed versionCode')
+          code = max(48508396, int(raw) + 1, 48508395 + int(os.environ['GITHUB_RUN_NUMBER']))
           if code > 2100000000:
-              raise SystemExit("Android versionCode limit exceeded")
-
-          with open(os.environ["GITHUB_ENV"], "a") as f:
-              f.write(f"POS7_VERSION_CODE={code}\n")
-
-          print("New versionCode:", code)
+              raise SystemExit('Android versionCode limit exceeded')
+          with open(os.environ['GITHUB_ENV'], 'a') as f:
+              f.write(f'POS7_VERSION_CODE={code}\n')
+          print('New versionCode:', code)
           PY
 
-      - name: Configure original signing
+      - name: Verify original signing certificate
         env:
           POS7_KEYSTORE_BASE64: ${{ secrets.POS7_KEYSTORE_BASE64 }}
           POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
@@ -147,75 +109,39 @@ jobs:
           POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-
-          for name in \
-            POS7_KEYSTORE_BASE64 \
-            POS7_KEYSTORE_PASSWORD \
-            POS7_KEY_ALIAS \
-            POS7_KEY_PASSWORD
-          do
+          for name in POS7_KEYSTORE_BASE64 POS7_KEYSTORE_PASSWORD POS7_KEY_ALIAS POS7_KEY_PASSWORD; do
             if [[ -z "${!name:-}" ]]; then
               echo "Missing signing secret: $name"
               exit 1
             fi
           done
-
           keyfile="$RUNNER_TEMP/pos7-release.jks"
-
-          printf '%s' "$POS7_KEYSTORE_BASE64" \
-            | base64 --decode > "$keyfile"
-
+          printf '%s' "$POS7_KEYSTORE_BASE64" | base64 --decode > "$keyfile"
+          chmod 600 "$keyfile"
           test -s "$keyfile"
-
           echo "POS7_KEYSTORE_PATH=$keyfile" >> "$GITHUB_ENV"
-
           keytool -list -v \
             -keystore "$keyfile" \
             -storepass "$POS7_KEYSTORE_PASSWORD" \
             -alias "$POS7_KEY_ALIAS" \
             > "$RUNNER_TEMP/certificate.txt"
-
           python3 - <<'PY'
           from pathlib import Path
-          import os
-          import re
-
-          certificate = Path(
-              os.environ["RUNNER_TEMP"]
-          ) / "certificate.txt"
-
-          content = certificate.read_text("utf-8")
-
-          expected = (
-              "843ED618B18EC7A0CB5B0F3898437454"
-              "0DA016C41A8DF8042BB8DB19964D4495"
-          )
-
-          match = re.search(
-              r"SHA256:\s*([0-9A-Fa-f:]+)",
-              content
-          )
-
+          import os, re
+          content = (Path(os.environ['RUNNER_TEMP']) / 'certificate.txt').read_text('utf-8')
+          expected = '843ED618B18EC7A0CB5B0F38984374540DA016C41A8DF8042BB8DB19964D4495'
+          match = re.search(r'SHA256:\s*([0-9A-Fa-f:]+)', content)
           if not match:
-              raise SystemExit(
-                  "Signing certificate SHA256 not found"
-              )
-
-          actual = (
-              match.group(1)
-              .replace(":", "")
-              .upper()
-          )
-
-          print("Actual signing SHA256:", actual)
-          print("Expected signing SHA256:", expected)
-
+              raise SystemExit('Signing certificate SHA256 not found')
+          actual = match.group(1).replace(':', '').upper()
+          print('Actual signing SHA256:  ', actual)
+          print('Expected signing SHA256:', expected)
+          print('Actual length:', len(actual), 'Expected length:', len(expected))
           if actual != expected:
-              raise SystemExit(
-                  "Original signing certificate mismatch"
-              )
-
-          print("Original signing certificate verified")
+              differences = [str(i+1) for i,(a,b) in enumerate(zip(actual,expected)) if a != b]
+              print('Different character positions (1-based):', ', '.join(differences) or 'none')
+              raise SystemExit('STOP: GitHub signing certificate differs from known POS7 certificate. Do not install a new APK.')
+          print('Original signing certificate verified')
           PY
 
       - name: Build signed release APK
@@ -224,57 +150,30 @@ jobs:
           POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
           POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
           POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
-        run: |
-          gradle --no-daemon clean assembleRelease
+        run: gradle --no-daemon clean assembleRelease
 
-      - name: Verify APK signature and package
+      - name: Verify release APK signature and package
         run: |
           set -euo pipefail
-
-          APK="android-project/POS7_Tablet/app/build/outputs/apk/release/app-release.apk"
-
+          APK='android-project/POS7_Tablet/app/build/outputs/apk/release/app-release.apk'
           test -s "$APK"
-
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
-            verify --verbose --print-certs "$APK" \
-            > "$RUNNER_TEMP/apk-signature.txt"
-
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK" > "$RUNNER_TEMP/apk-signature.txt"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > "$RUNNER_TEMP/apk-badging.txt"
           python3 - <<'PY'
           from pathlib import Path
-          import os
-          import re
-
-          content = (
-              Path(os.environ["RUNNER_TEMP"]) /
-              "apk-signature.txt"
-          ).read_text("utf-8")
-
-          expected = (
-              "843ED618B18EC7A0CB5B0F3898437454"
-              "0DA016C41A8DF8042BB8DB19964D4495"
-          )
-
-          match = re.search(
-              r"certificate SHA-256 digest:\s*([0-9a-fA-F:]+)",
-              content,
-              re.I
-          )
-
-          if not match:
-              raise SystemExit("APK signer not found")
-
-          actual = match.group(1).replace(":", "").upper()
-
-          if actual != expected:
-              raise SystemExit(
-                  "APK signing certificate mismatch"
-              )
-
-          print("APK signature verified")
+          import os,re
+          tmp = Path(os.environ['RUNNER_TEMP'])
+          signature = (tmp/'apk-signature.txt').read_text('utf-8')
+          badging = (tmp/'apk-badging.txt').read_text('utf-8')
+          expected = '843ED618B18EC7A0CB5B0F38984374540DA016C41A8DF8042BB8DB19964D4495'
+          match = re.search(r'certificate SHA-256 digest:\s*([0-9a-fA-F:]+)', signature, re.I)
+          if not match or match.group(1).replace(':','').upper() != expected:
+              raise SystemExit('APK signing certificate mismatch')
+          if "name='com.sokkarzeyedeh.pos7'" not in badging:
+              raise SystemExit('Wrong Android package name')
+          print('APK package and original signing certificate verified')
+          print(badging.splitlines()[0])
           PY
-
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" \
-            dump badging "$APK" | head -5
 
       - name: Publish APK
         uses: actions/upload-artifact@v4
