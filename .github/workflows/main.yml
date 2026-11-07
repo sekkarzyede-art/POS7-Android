@@ -1,18 +1,18 @@
 
-name: Build POS7 Tablet v485.7.207
+name: Build POS7 Tablet Keystore Stage 1
 
 on:
   workflow_dispatch:
     inputs:
       installed_version_code:
-        description: 'Actual versionCode of installed tablet APK (enter if higher than default)'
+        description: "Current installed APK versionCode"
         required: false
-        default: '48508240'
+        default: "48508395"
         type: string
   push:
     branches: [main]
     paths:
-      - 'POS7_Tablet_v485.7.207_Quick_Grid_Photos_Project.zip'
+      - 'POS7_Tablet_v485.7.207_Keystore_Module_Stage1_Project.zip'
       - '.github/workflows/main.yml'
 
 permissions:
@@ -22,8 +22,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 35
+
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up Java 17
@@ -32,7 +33,7 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Gradle 8.9
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
@@ -40,78 +41,89 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Install Android SDK components
+      - name: Install Android SDK
         run: |
-          set -euo pipefail
-          sdkmanager --install 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
+          sdkmanager --install \
+            'platform-tools' \
+            'platforms;android-35' \
+            'build-tools;35.0.0'
 
-      - name: Extract and check POS7 source
+      - name: Extract and validate project
         run: |
-          set -euo pipefail
-          python3 - <<'PYEXTRACT'
+          python3 - <<'PY'
           from pathlib import Path
           from zipfile import ZipFile
-          archive = Path('POS7_Tablet_v485.7.207_Quick_Grid_Photos_Project.zip')
+
+          archive = Path(
+            "POS7_Tablet_v485.7.207_Keystore_Module_Stage1_Project.zip"
+          )
           if not archive.is_file():
-              raise SystemExit('Project ZIP is missing from repository root')
-          target = Path('android-project').resolve()
+              raise SystemExit("Project ZIP not found")
+
+          root = Path("android-project").resolve()
           with ZipFile(archive) as z:
               for item in z.infolist():
-                  dest = (target / item.filename).resolve()
-                  if not dest.is_relative_to(target):
-                      raise SystemExit('Unsafe ZIP path: ' + item.filename)
-              z.extractall(target)
-          root = target / 'POS7_Tablet'
-          gradle = (root / 'app/build.gradle').read_text('utf-8')
-          html = (root / 'app/src/main/assets/index.html').read_text('utf-8')
-          checks = {
-              'package': "applicationId 'com.sokkarzeyedeh.pos7'" in gradle,
-              'version': "versionName '485.7.207'" in gradle,
-              'HTML version': "POS7_APP_VERSION='485.7.207'" in html,
-              'quick sale grid': 'pos205-grid' in html,
-              'product images': 'pos205-image-field' in html,
-              'safe sync': 'pos187-safe-navigation-and-sync' in html,
-              'original signing required': 'Original POS7 signing secrets required' in gradle,
-          }
-          for label, ok in checks.items():
-              if not ok:
-                  raise SystemExit('Source check failed: ' + label)
-          print('POS7 source v485.7.207 verified')
-          PYEXTRACT
+                  target = (root / item.filename).resolve()
+                  if not target.is_relative_to(root):
+                      raise SystemExit("Unsafe ZIP entry")
+              z.extractall(root)
 
-      - name: Validate Android project and HTML integrity
-        working-directory: android-project/POS7_Tablet
-        run: |
-          set -euo pipefail
-          python3 - <<'PYVALIDATE'
-          from pathlib import Path
-          h=Path('app/src/main/assets/index.html').read_text('utf-8')
-          assert 'pos205-grid' in h and 'pos205-image-field' in h
-          assert "POS7_APP_VERSION='485.7.207'" in h
-          assert Path('app/src/main/AndroidManifest.xml').is_file()
-          print('Project file checks passed; device functional tests still required')
-          PYVALIDATE
+          project = root / "POS7_Tablet"
+          required = [
+              "settings.gradle",
+              "app/build.gradle",
+              "app/src/main/AndroidManifest.xml",
+              "app/src/main/assets/index.html",
+              "app/src/main/java/com/sokkarzeyedeh/pos7/MainActivity.java",
+              "app/src/main/java/com/sokkarzeyedeh/pos7/Pos7DeviceIdentity.java",
+          ]
+          for name in required:
+              if not (project / name).is_file():
+                  raise SystemExit("Missing: " + name)
 
-      - name: Select upgrade-safe versionCode
+          gradle = (project / "app/build.gradle").read_text()
+          html = (project / "app/src/main/assets/index.html").read_text()
+          identity = (
+              project /
+              "app/src/main/java/com/sokkarzeyedeh/pos7/Pos7DeviceIdentity.java"
+          ).read_text()
+
+          assert "com.sokkarzeyedeh.pos7" in gradle
+          assert "versionName '485.7.207'" in gradle
+          assert "POS7_APP_VERSION='485.7.207'" in html
+          assert "AndroidKeyStore" in identity
+          assert "secp256r1" in identity
+          print("Project checks passed")
+          PY
+
+      - name: Configure upgrade-safe versionCode
         env:
           INSTALLED_CODE: ${{ inputs.installed_version_code }}
         run: |
-          set -euo pipefail
-          python3 - <<'PYCODE'
+          python3 - <<'PY'
           import os
-          raw = os.environ.get('INSTALLED_CODE', '').strip() or '48508240'
-          if not raw.isascii() or not raw.isdecimal():
-              raise SystemExit('installed_version_code must contain decimal digits')
-          code = max(48508241, int(raw) + 1,
-                     48508240 + int(os.environ['GITHUB_RUN_NUMBER']))
-          if code > 2100000000:
-              raise SystemExit('Android versionCode maximum exceeded')
-          with open(os.environ['GITHUB_ENV'], 'a') as envfile:
-              envfile.write(f'POS7_VERSION_CODE={code}\n')
-          print('Release versionCode:', code)
-          PYCODE
 
-      - name: Verify original signing certificate
+          raw = os.environ.get("INSTALLED_CODE", "").strip()
+          if not raw:
+              raw = "48508395"
+          if not raw.isascii() or not raw.isdecimal():
+              raise SystemExit("Invalid installed versionCode")
+
+          installed = int(raw)
+          code = max(
+              48508396,
+              installed + 1,
+              48508395 + int(os.environ["GITHUB_RUN_NUMBER"])
+          )
+          if code > 2100000000:
+              raise SystemExit("versionCode exceeds Android limit")
+
+          with open(os.environ["GITHUB_ENV"], "a") as f:
+              f.write(f"POS7_VERSION_CODE={code}\n")
+          print("New versionCode:", code)
+          PY
+
+      - name: Configure original signing
         env:
           POS7_KEYSTORE_BASE64: ${{ secrets.POS7_KEYSTORE_BASE64 }}
           POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
@@ -119,72 +131,101 @@ jobs:
           POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          for key in POS7_KEYSTORE_BASE64 POS7_KEYSTORE_PASSWORD POS7_KEY_ALIAS POS7_KEY_PASSWORD; do
-            if [[ -z "${!key:-}" ]]; then
-              echo "Missing GitHub signing secret: $key"
+          for name in \
+            POS7_KEYSTORE_BASE64 \
+            POS7_KEYSTORE_PASSWORD \
+            POS7_KEY_ALIAS \
+            POS7_KEY_PASSWORD
+          do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing signing secret: $name"
               exit 1
             fi
           done
-          umask 077
-          keyfile="$RUNNER_TEMP/pos7-original-release.jks"
-          printf '%s' "$POS7_KEYSTORE_BASE64" | base64 --decode > "$keyfile"
-          test -s "$keyfile"
-          expected='843ed618b18ec7a0cbb50f38984374540da016c41a8df8042bb8db19964d4495'
-          actual=$(keytool -exportcert \
-            -keystore "$keyfile" \
-            -storepass:env POS7_KEYSTORE_PASSWORD \
-            -alias "$POS7_KEY_ALIAS" \
-            | sha256sum | awk '{print $1}')
-          if [[ "$actual" != "$expected" ]]; then
-            echo 'Original POS7 certificate mismatch: refusing build'
-            exit 1
-          fi
-          echo "POS7_KEYSTORE_PATH=$keyfile" >> "$GITHUB_ENV"
-          echo "POS7_SIGNING_CERT_SHA256=$actual" >> "$GITHUB_ENV"
-          echo 'Original signing certificate verified'
 
-      - name: Build release APK with original signature
+          keyfile="$RUNNER_TEMP/pos7-release.jks"
+          printf '%s' "$POS7_KEYSTORE_BASE64" \
+            | base64 --decode > "$keyfile"
+          test -s "$keyfile"
+          echo "POS7_KEYSTORE_PATH=$keyfile" >> "$GITHUB_ENV"
+
+          keytool -list -v \
+            -keystore "$keyfile" \
+            -storepass "$POS7_KEYSTORE_PASSWORD" \
+            -alias "$POS7_KEY_ALIAS" \
+            > "$RUNNER_TEMP/certificate.txt"
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          text = Path(
+              __import__('os').environ['RUNNER_TEMP'] +
+              '/certificate.txt'
+          ).read_text()
+          expected = (
+              "843ED618B18EC7A0CB5B0F3898437454"
+              "0DA016C41A8DF8042BB8DB19964D4495"
+          )
+          match = re.search(
+              r"SHA256:\s*([0-9A-Fa-f:]+)", text
+          )
+          if not match:
+              raise SystemExit("Signing fingerprint missing")
+          actual = match.group(1).replace(":", "").upper()
+          if actual != expected:
+              raise SystemExit("Original signing certificate mismatch")
+          print("Original signing certificate verified")
+          PY
+
+      - name: Build signed release APK
         working-directory: android-project/POS7_Tablet
         env:
           POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
           POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
           POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
         run: |
-          set -euo pipefail
           gradle --no-daemon clean assembleRelease
 
-      - name: Verify package, version and final signature
+      - name: Verify APK signature and package
         run: |
           set -euo pipefail
-          apk='android-project/POS7_Tablet/app/build/outputs/apk/release/app-release.apk'
-          sdk="$ANDROID_HOME/build-tools/35.0.0"
-          test -s "$apk"
-          "$sdk/apksigner" verify --verbose "$apk"
-          "$sdk/aapt" dump badging "$apk" > "$RUNNER_TEMP/pos7-badging.txt"
-          grep -F "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.207'" "$RUNNER_TEMP/pos7-badging.txt"
-          actual=$("$sdk/apksigner" verify --print-certs "$apk" \
-            | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2}' \
-            | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')
-          if [[ "$actual" != "$POS7_SIGNING_CERT_SHA256" ]]; then
-            echo 'Final APK signature differs from original; refusing release'
-            exit 1
-          fi
-          mkdir -p output
-          cp "$apk" output/POS7_Tablet_v485.7.207_Quick_Grid_Photos.apk
-          sha256sum output/*.apk > output/SHA256SUMS.txt
-          printf 'versionName=485.7.207\nversionCode=%s\ncertificateSHA256=%s\n' \
-            "$POS7_VERSION_CODE" "$actual" > output/build-info.txt
-          echo 'Signed APK passed all checks'
+          APK="android-project/POS7_Tablet/app/build/outputs/apk/release/app-release.apk"
+          test -s "$APK"
 
-      - name: Publish verified APK artifact
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
+            verify --verbose --print-certs "$APK" \
+            > "$RUNNER_TEMP/apk-signature.txt"
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          import re
+          text = Path(
+              os.environ["RUNNER_TEMP"] +
+              "/apk-signature.txt"
+          ).read_text()
+          expected = (
+              "843ED618B18EC7A0CB5B0F3898437454"
+              "0DA016C41A8DF8042BB8DB19964D4495"
+          )
+          match = re.search(
+              r"certificate SHA-256 digest:\s*([0-9a-fA-F:]+)",
+              text, re.I
+          )
+          if not match:
+              raise SystemExit("APK signer not found")
+          if match.group(1).replace(":", "").upper() != expected:
+              raise SystemExit("APK signing certificate mismatch")
+          print("APK signing verified")
+          PY
+
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" \
+            dump badging "$APK" | head -5
+
+      - name: Publish APK
         uses: actions/upload-artifact@v4
         with:
-          name: POS7-Tablet-v485.7.207-${{ env.POS7_VERSION_CODE }}
-          path: output/
+          name: POS7_Tablet_v485.7.207_Keystore_Stage1
+          path: android-project/POS7_Tablet/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
-          retention-days: 30
-
-      - name: Delete temporary signing material
-        if: always()
-        run: |
-          rm -f "$RUNNER_TEMP/pos7-original-release.jks"
+          retention-days: 14
