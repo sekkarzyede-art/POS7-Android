@@ -11,7 +11,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'POS7_Phone_v485.7.136_Project.zip'
+      - 'POS7_Phone_v485.7.136_Photos_Android_Project.zip'
       - '.github/workflows/main.yml'
 
 permissions:
@@ -48,9 +48,9 @@ jobs:
           python3 - <<'PY'
           import zipfile
           from pathlib import Path
-          src=Path('POS7_Phone_v485.7.136_Project.zip')
+          src=Path('POS7_Phone_v485.7.136_Photos_Android_Project.zip')
           dest=Path('android-project').resolve()
-          if not src.is_file(): raise SystemExit('Missing POS7_Phone_v485.7.136_Project.zip')
+          if not src.is_file(): raise SystemExit('Missing POS7_Phone_v485.7.136_Photos_Android_Project.zip')
           with zipfile.ZipFile(src) as z:
               for info in z.infolist():
                   target=(dest/info.filename).resolve()
