@@ -1,17 +1,12 @@
-name: POS7 Tablet 485.7.225 Signed Release
+name: POS7 Tablet 485.7.225 R36 - Build Uploaded ZIP
 on:
   workflow_dispatch:
-    inputs:
-      installed_version_code:
-        description: "Actual installed tablet versionCode (Android), optional"
-        required: false
-        type: string
 permissions:
   contents: read
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -22,66 +17,77 @@ jobs:
         with:
           gradle-version: '8.9'
       - uses: android-actions/setup-android@v4
-      - name: Install SDK
+      - name: Install Android SDK
         run: sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
-      - name: Verify sources and compute upgrade versionCode
-        env:
-          INSTALLED_CODE: ${{ inputs.installed_version_code }}
+      - name: Unpack exact R36 archive and refuse old sources
+        shell: bash
         run: |
-          python3 - <<'PY'
-          import os,re
+          set -euo pipefail
+          archive='POS7_Tablet_v485.7.225_R36_SOURCE.zip'
+          test -f "$archive" || { echo "ERROR: R36 ZIP is not uploaded to repository root"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/pos7-r36"
+          unzip -q "$archive" -d "$RUNNER_TEMP/pos7-r36"
+          test -f "$RUNNER_TEMP/pos7-r36/POS7_Tablet/app/build.gradle"
+          test -f "$RUNNER_TEMP/pos7-r36/POS7_Tablet/app/src/main/assets/index.html"
+          echo "POS7_SOURCE=$RUNNER_TEMP/pos7-r36/POS7_Tablet" >> "$GITHUB_ENV"
+          python3 - "$RUNNER_TEMP/pos7-r36/POS7_Tablet" <<'PYVERIFY'
+          import sys,re
           from pathlib import Path
-          p=Path('POS7_Tablet/app/src/main/assets/index.html')
-          s=p.read_text()
-          assert "window.POS7_APP_VERSION='485.7.225'" in s
-          assert 'pos7-photo-sync-r34' in s
-          assert 'pos7PhotoRun' in s
-          assert "versionName '485.7.225'" in Path('POS7_Tablet/app/build.gradle').read_text()
-          raw=(os.environ.get('INSTALLED_CODE') or '').strip()
-          if raw and (not raw.isascii() or not raw.isdecimal()):raise SystemExit('Invalid installed versionCode')
-          code=max(48508242, int(raw)+1 if raw else 0, 48508242+int(os.environ['GITHUB_RUN_NUMBER']))
-          if code>2100000000:raise SystemExit('versionCode overflow')
-          with open(os.environ['GITHUB_ENV'],'a') as f:f.write('POS7_VERSION_CODE=%s\n'%code)
-          print('Upgrade versionCode:',code)
-          PY
-      - name: Validate JS
-        run: python3 POS7_Tablet/ci/validate.py
-      - name: Verify original signing secrets and certificate
+          p=Path(sys.argv[1]); h=(p/'app/src/main/assets/index.html').read_text(); g=(p/'app/build.gradle').read_text()
+          assert "window.POS7_APP_VERSION='485.7.225'" in h, 'WRONG HTML VERSION'
+          assert 'pos7-photo-sync-r34' in h and 'pos7PhotoRun' in h and 'pos7OpenPhotoCard' in h, 'PHOTO CARD MISSING'
+          assert "versionName '485.7.225'" in g, 'WRONG ANDROID VERSION'
+          assert "applicationId 'com.sokkarzeyedeh.pos7'" in g, 'WRONG PACKAGE'
+          print('VERIFIED: 225 + R34 photo sync card + original package')
+          PYVERIFY
+      - name: Validate JavaScript in R36 HTML
+        run: cd "$POS7_SOURCE" && python3 ci/validate.py
+      - name: Verify original signing key before build
         env:
           POS7_KEYSTORE_BASE64: ${{ secrets.POS7_KEYSTORE_BASE64 }}
           POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
           POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
           POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
+        shell: bash
         run: |
           set -euo pipefail
-          for x in POS7_KEYSTORE_BASE64 POS7_KEYSTORE_PASSWORD POS7_KEY_ALIAS POS7_KEY_PASSWORD; do test -n "${!x:-}" || { echo "Missing $x"; exit 1; }; done
+          for x in POS7_KEYSTORE_BASE64 POS7_KEYSTORE_PASSWORD POS7_KEY_ALIAS POS7_KEY_PASSWORD; do
+            test -n "${!x:-}" || { echo "Missing original secret: $x"; exit 1; }
+          done
           umask 077
-          printf %s "$POS7_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/original.jks"
-          cert=$(keytool -exportcert -keystore "$RUNNER_TEMP/original.jks" -storepass:env POS7_KEYSTORE_PASSWORD -alias "$POS7_KEY_ALIAS" | sha256sum | awk '{print $1}')
-          test "$cert" = "843ed618b18ec7a0cbb50f38984374540da016c41a8df8042bb8db19964d4495" || { echo 'WRONG SIGNER'; exit 1; }
-          echo "POS7_KEYSTORE_PATH=$RUNNER_TEMP/original.jks" >> "$GITHUB_ENV"
-          echo "EXPECTED_CERT=$cert" >> "$GITHUB_ENV"
-      - name: Build signed tablet
-        working-directory: POS7_Tablet
+          printf '%s' "$POS7_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/pos7-original.jks"
+          cert=$(keytool -exportcert -keystore "$RUNNER_TEMP/pos7-original.jks" -storepass:env POS7_KEYSTORE_PASSWORD -alias "$POS7_KEY_ALIAS" | sha256sum | awk '{print $1}')
+          test "$cert" = '843ed618b18ec7a0cbb50f38984374540da016c41a8df8042bb8db19964d4495' || { echo 'WRONG SIGNER: build refused'; exit 1; }
+          echo "POS7_KEYSTORE_PATH=$RUNNER_TEMP/pos7-original.jks" >> "$GITHUB_ENV"
+          echo "POS7_EXPECTED_CERT=$cert" >> "$GITHUB_ENV"
+      - name: Build signed APK only from R36 archive
         env:
           POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
           POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
           POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
-        run: gradle --no-daemon clean assembleRelease
-      - name: Validate APK package version and signature
+        shell: bash
         run: |
           set -euo pipefail
-          apk=POS7_Tablet/app/build/outputs/apk/release/app-release.apk
+          echo "POS7_VERSION_CODE=$((48508242 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+          cd "$POS7_SOURCE"
+          POS7_VERSION_CODE=$((48508242 + GITHUB_RUN_NUMBER)) gradle --no-daemon clean assembleRelease
+      - name: Verify APK metadata, signature, embedded photo card
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="$POS7_SOURCE/app/build/outputs/apk/release/app-release.apk"
           sdk="$ANDROID_HOME/build-tools/35.0.0"
           "$sdk/apksigner" verify --verbose "$apk"
           "$sdk/aapt" dump badging "$apk" | grep -F "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.225'"
           cert=$("$sdk/apksigner" verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2}' | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')
-          test "$cert" = "$EXPECTED_CERT"
+          test "$cert" = "$POS7_EXPECTED_CERT"
+          unzip -p "$apk" assets/index.html | grep -q 'pos7-photo-sync-r34'
+          unzip -p "$apk" assets/index.html | grep -q "POS7_APP_VERSION='485.7.225'"
           mkdir -p output
-          cp "$apk" output/POS7_Tablet_v485.7.225_Manual_Photos.apk
+          cp "$apk" output/POS7_Tablet_v485.7.225_R36.apk
           sha256sum output/*.apk > output/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: POS7-Tablet-485.7.225
+          name: POS7-Tablet-v485.7.225-R36-Verified
           path: output/
           if-no-files-found: error
