@@ -53,9 +53,13 @@ jobs:
           expected='414e5ed8b3d3dd669e4bae7ff378dbc211caa67e462573a92cc1720437b94262'
           if hashlib.sha256(html).hexdigest()!=expected: raise SystemExit('HTML SHA mismatch')
           text=html.decode('utf-8')
-          if 'v485.7.144' not in text or 'إضافة صور المنتجات' not in text: raise SystemExit('Wrong phone HTML')
+          if 'إضافة صور المنتجات' not in text: raise SystemExit('Missing product photo button')
           # Update the stale document title only after verifying the original archive SHA.
-          text=text.replace('<title>سكر زيادة — هاتف المالك v485.7.134</title>', '<title>سكر زيادة — هاتف المالك v485.7.144</title>', 1)
+          old_title='<title>سكر زيادة — هاتف المالك v485.7.134</title>'
+          new_title='<title>سكر زيادة — هاتف المالك v485.7.144</title>'
+          if text.count(old_title)!=1: raise SystemExit('Unexpected original HTML title')
+          text=text.replace(old_title, new_title, 1)
+          if new_title not in text: raise SystemExit('HTML title update failed')
           html=text.encode('utf-8')
           app=root/'POS7_Owner_Phone'
           dest=app/'app/src/main/assets/index.html'
