@@ -1,4 +1,4 @@
-name: POS7 OWNER PHONE v485.7.143 - ORIGINAL SIGNED
+name: POS7 OWNER PHONE v485.7.143 R42 - FIREBASE FIX
 on:
   workflow_dispatch:
     inputs:
@@ -121,6 +121,36 @@ jobs:
           expected=843ed618b18ec7a0cbb50f38984374540da016c41a8df8042bb8db19964d4495
           if [[ "$actual" != "$expected" ]]; then echo 'Original certificate mismatch'; exit 1; fi
           echo "POS7_KEYSTORE_PATH=$RUNNER_TEMP/pos7-original.jks" >> "$GITHUB_ENV"
+      - name: Restore original Firebase configuration for FCM
+        shell: bash
+        env:
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          set -euo pipefail
+          dest="android-project/POS7_Owner_Phone/app/google-services.json"
+          if [[ -n "${GOOGLE_SERVICES_JSON_BASE64:-}" ]]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > "$dest"
+          elif [[ -n "${GOOGLE_SERVICES_JSON:-}" ]]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON" > "$dest"
+          elif [[ -s "$dest" ]]; then
+            echo 'Using existing Firebase configuration from original source'
+          else
+            echo 'ERROR: Firebase google-services.json missing. Set repository secret GOOGLE_SERVICES_JSON_BASE64 (base64 encoded original phone google-services.json), or GOOGLE_SERVICES_JSON (raw original JSON). Do not use tablet or another Firebase project config.'
+            exit 1
+          fi
+          python3 - <<'PYCODE'
+          import json
+          from pathlib import Path
+          p=Path('android-project/POS7_Owner_Phone/app/google-services.json')
+          d=json.loads(p.read_text())
+          packages=[c.get('client_info',{}).get('android_client_info',{}).get('package_name') for c in d.get('client',[])]
+          if 'com.sokkarzeyedeh.pos7owner' not in packages:
+              raise SystemExit('Firebase config package mismatch; expected original phone package com.sokkarzeyedeh.pos7owner')
+          if not d.get('project_info',{}).get('project_id'):
+              raise SystemExit('Firebase project ID missing')
+          print('Original phone Firebase config validated for package; project:',d['project_info']['project_id'])
+          PYCODE
       - name: Build signed phone APK
         working-directory: android-project/POS7_Owner_Phone
         env:
