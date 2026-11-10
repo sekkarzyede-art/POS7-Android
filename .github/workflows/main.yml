@@ -1,4 +1,4 @@
-name: POS7 TABLET 485.7.225 R37 - VERIFIED SOURCE ONLY
+name: POS7 TABLET 485.7.225 R38 - BUILD VERIFIED R36 SOURCE
 on:
   push:
     branches: [main]
@@ -6,6 +6,11 @@ on:
       - '.github/workflows/main.yml'
       - 'POS7_Tablet_v485.7.225_R36_SOURCE.zip'
   workflow_dispatch:
+    inputs:
+      installed_version_code:
+        description: "Installed Android versionCode (optional, not versionName)"
+        required: false
+        type: string
 permissions:
   contents: read
 jobs:
@@ -40,7 +45,9 @@ jobs:
           import sys,re
           from pathlib import Path
           p=Path(sys.argv[1]); h=(p/'app/src/main/assets/index.html').read_text(); g=(p/'app/build.gradle').read_text()
-          assert "window.POS7_APP_VERSION='485.7.225'" in h, 'WRONG HTML VERSION'
+          import hashlib
+          assert hashlib.sha256((p/'app/src/main/assets/index.html').read_bytes()).hexdigest() == '27373e48f7e695bd5dfe899eb3acdc22d414a0da4b297bf4aa5fa49c5d2619bf', 'SOURCE HTML CHANGED'
+          assert "window.POS7_APP_VERSION='485.7.225'" in h, 'WRONG HTML VERSION' 
           assert 'pos7-photo-sync-r34' in h and 'pos7PhotoRun' in h and 'pos7OpenPhotoCard' in h, 'PHOTO CARD MISSING'
           assert "versionName '485.7.225'" in g, 'WRONG ANDROID VERSION'
           assert "applicationId 'com.sokkarzeyedeh.pos7'" in g, 'WRONG PACKAGE'
@@ -66,6 +73,22 @@ jobs:
           test "$cert" = '843ed618b18ec7a0cbb50f38984374540da016c41a8df8042bb8db19964d4495' || { echo 'WRONG SIGNER: build refused'; exit 1; }
           echo "POS7_KEYSTORE_PATH=$RUNNER_TEMP/pos7-original.jks" >> "$GITHUB_ENV"
           echo "POS7_EXPECTED_CERT=$cert" >> "$GITHUB_ENV"
+      - name: Determine update-safe versionCode
+        shell: bash
+        env:
+          INSTALLED_CODE: ${{ inputs.installed_version_code }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PYCODE'
+          import os
+          raw=(os.getenv('INSTALLED_CODE') or '').strip()
+          if raw and (not raw.isascii() or not raw.isdecimal()):
+              raise SystemExit('Invalid installed versionCode')
+          code=max(48508242+int(os.environ['GITHUB_RUN_NUMBER']),int(raw)+1 if raw else 0)
+          if code>2100000000:raise SystemExit('versionCode exceeds Android limit')
+          with open(os.environ['GITHUB_ENV'],'a') as f:f.write(f'POS7_VERSION_CODE={code}\\n')
+          print('Expected Android versionCode:',code)
+          PYCODE
       - name: Build signed APK only from R36 archive
         env:
           POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
@@ -74,9 +97,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "POS7_VERSION_CODE=$((48508242 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
           cd "$POS7_SOURCE"
-          POS7_VERSION_CODE=$((48508242 + GITHUB_RUN_NUMBER)) gradle --no-daemon clean assembleRelease
+          gradle --no-daemon clean assembleRelease
       - name: Verify APK metadata, signature, embedded photo card
         shell: bash
         run: |
@@ -96,11 +118,11 @@ jobs:
           print('APK HTML verified: 485.7.225 + photo sync R34')
           PYASSET
           mkdir -p output
-          cp "$apk" output/POS7_TABLET_v485.7.225_R37_VERIFIED.apk
+          cp "$apk" output/POS7_TABLET_v485.7.225_R38_VERIFIED.apk
           sha256sum output/*.apk > output/SHA256SUMS.txt
           printf 'APP=POS7 Tablet\nVERSION=485.7.225\nSOURCE=R36 ZIP SHA256 3186dae14b9cf4f219ba44487314f07f2c4b137f7daaefe8b8c5f39f022e55c1\nAPPLIED=Photo R34\nSIGNED=Original certificate checked\nGITHUB_RUN=%s\n' "$GITHUB_RUN_ID" > output/VERIFIED_BUILD.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: POS7-TABLET-225-R37-VERIFIED-ONLY
+          name: POS7-TABLET-225-R38-VERIFIED-ONLY
           path: output/
           if-no-files-found: error
