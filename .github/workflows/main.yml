@@ -1,4 +1,4 @@
-name: POS7 TABLET 485.7.225 R38 - BUILD VERIFIED R36 SOURCE
+name: POS7 TABLET 485.7.225 R39 - VERSIONCODE FIX
 on:
   push:
     branches: [main]
@@ -86,7 +86,7 @@ jobs:
               raise SystemExit('Invalid installed versionCode')
           code=max(48508242+int(os.environ['GITHUB_RUN_NUMBER']),int(raw)+1 if raw else 0)
           if code>2100000000:raise SystemExit('versionCode exceeds Android limit')
-          with open(os.environ['GITHUB_ENV'],'a') as f:f.write(f'POS7_VERSION_CODE={code}\\n')
+          with open(os.environ['GITHUB_ENV'],'a') as f:f.write(f'POS7_VERSION_CODE={code}\n')
           print('Expected Android versionCode:',code)
           PYCODE
       - name: Build signed APK only from R36 archive
@@ -118,11 +118,11 @@ jobs:
           print('APK HTML verified: 485.7.225 + photo sync R34')
           PYASSET
           mkdir -p output
-          cp "$apk" output/POS7_TABLET_v485.7.225_R38_VERIFIED.apk
+          cp "$apk" output/POS7_TABLET_v485.7.225_R39_VERIFIED.apk
           sha256sum output/*.apk > output/SHA256SUMS.txt
           printf 'APP=POS7 Tablet\nVERSION=485.7.225\nSOURCE=R36 ZIP SHA256 3186dae14b9cf4f219ba44487314f07f2c4b137f7daaefe8b8c5f39f022e55c1\nAPPLIED=Photo R34\nSIGNED=Original certificate checked\nGITHUB_RUN=%s\n' "$GITHUB_RUN_ID" > output/VERIFIED_BUILD.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: POS7-TABLET-225-R38-VERIFIED-ONLY
+          name: POS7-TABLET-225-R39-VERIFIED-ONLY
           path: output/
           if-no-files-found: error
