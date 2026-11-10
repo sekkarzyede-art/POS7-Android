@@ -1,5 +1,10 @@
-name: POS7 Tablet 485.7.225 R36 - Build Uploaded ZIP
+name: POS7 TABLET 485.7.225 R37 - VERIFIED SOURCE ONLY
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/main.yml'
+      - 'POS7_Tablet_v485.7.225_R36_SOURCE.zip'
   workflow_dispatch:
 permissions:
   contents: read
@@ -25,6 +30,7 @@ jobs:
           set -euo pipefail
           archive='POS7_Tablet_v485.7.225_R36_SOURCE.zip'
           test -f "$archive" || { echo "ERROR: R36 ZIP is not uploaded to repository root"; exit 1; }
+          printf '%s  %s\n' '3186dae14b9cf4f219ba44487314f07f2c4b137f7daaefe8b8c5f39f022e55c1' "$archive" | sha256sum -c -
           mkdir -p "$RUNNER_TEMP/pos7-r36"
           unzip -q "$archive" -d "$RUNNER_TEMP/pos7-r36"
           test -f "$RUNNER_TEMP/pos7-r36/POS7_Tablet/app/build.gradle"
@@ -81,13 +87,20 @@ jobs:
           "$sdk/aapt" dump badging "$apk" | grep -F "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.225'"
           cert=$("$sdk/apksigner" verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2}' | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')
           test "$cert" = "$POS7_EXPECTED_CERT"
-          unzip -p "$apk" assets/index.html | grep -q 'pos7-photo-sync-r34'
-          unzip -p "$apk" assets/index.html | grep -q "POS7_APP_VERSION='485.7.225'"
+          # Avoid grep -q / SIGPIPE failures under pipefail when assets/index.html is large.
+          python3 - "$apk" <<'PYASSET'
+          import sys,zipfile
+          with zipfile.ZipFile(sys.argv[1]) as z: h=z.read('assets/index.html').decode('utf-8')
+          assert "window.POS7_APP_VERSION='485.7.225'" in h, 'WRONG APK HTML VERSION'
+          assert 'pos7-photo-sync-r34' in h and 'pos7OpenPhotoCard' in h and 'pos7PhotoRun' in h, 'MISSING PHOTO CARD IN APK'
+          print('APK HTML verified: 485.7.225 + photo sync R34')
+          PYASSET
           mkdir -p output
-          cp "$apk" output/POS7_Tablet_v485.7.225_R36.apk
+          cp "$apk" output/POS7_TABLET_v485.7.225_R37_VERIFIED.apk
           sha256sum output/*.apk > output/SHA256SUMS.txt
+          printf 'APP=POS7 Tablet\nVERSION=485.7.225\nSOURCE=R36 ZIP SHA256 3186dae14b9cf4f219ba44487314f07f2c4b137f7daaefe8b8c5f39f022e55c1\nAPPLIED=Photo R34\nSIGNED=Original certificate checked\nGITHUB_RUN=%s\n' "$GITHUB_RUN_ID" > output/VERIFIED_BUILD.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: POS7-Tablet-v485.7.225-R36-Verified
+          name: POS7-TABLET-225-R37-VERIFIED-ONLY
           path: output/
           if-no-files-found: error
