@@ -46,13 +46,13 @@ jobs:
           from pathlib import Path
           p=Path(sys.argv[1]); h=(p/'app/src/main/assets/index.html').read_text(); g=(p/'app/build.gradle').read_text()
           import hashlib
-          assert hashlib.sha256((p/'app/src/main/assets/index.html').read_bytes()).hexdigest() == 'f3ad2b26a96c4129e2dea48e21bc8f770001b6ee85f5e76cb9dbf4d33b2ec185', 'SOURCE HTML CHANGED'
+          assert hashlib.sha256((p/'app/src/main/assets/index.html').read_bytes()).hexdigest() == '878b5717784a6b192f6e61becbc9d07cf7c0e088018646479aec0c1b5f2ed806', 'SOURCE HTML CHANGED'
           assert "window.POS7_APP_VERSION='485.7.228'" in h, 'WRONG HTML VERSION' 
           assert 'const localPid=String(product.id)' in h, 'R50 BARCODE FALLBACK MISSING'
           assert 'pos7-photo-sync-r34' in h and 'pos7PhotoRun' in h and 'pos7OpenPhotoCard' in h, 'PHOTO CARD MISSING'
           assert "versionName '485.7.228'" in g, 'WRONG ANDROID VERSION'
           assert "applicationId 'com.sokkarzeyedeh.pos7'" in g, 'WRONG PACKAGE'
-          print('VERIFIED: 225 + R34 photo sync card + original package')
+          print('VERIFIED: 228 + R50 diagnostic + original package')
           PYVERIFY
       - name: Validate JavaScript in R36 HTML
         run: cd "$POS7_SOURCE" && python3 ci/validate.py
@@ -135,6 +135,6 @@ jobs:
         run: rm -f "$RUNNER_TEMP/pos7-original.jks"
       - uses: actions/upload-artifact@v4
         with:
-          name: POS7-TABLET-227-R50-VERIFIED-ONLY
+          name: POS7-TABLET-228-R50-VERIFIED-ONLY
           path: output/
           if-no-files-found: error
