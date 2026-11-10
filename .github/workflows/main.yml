@@ -1,4 +1,4 @@
-name: POS7 OWNER PHONE v485.7.144 R53 - CAMERA AND HOME BUTTON
+name: POS7 OWNER PHONE v485.7.144 R56 - CAMERA MERGE
 on:
   workflow_dispatch:
     inputs:
@@ -75,132 +75,159 @@ jobs:
           if not native.is_file(): raise SystemExit('Native FCM service missing')
           print('Phone HTML SHA256:',expected)
           PYCODE
-      - name: Patch original MainActivity for direct rear camera
+      - name: Merge native camera capture into existing WebChromeClient
         shell: bash
         run: |
           set -euo pipefail
-          cat > /tmp/pos7_r53_patch.py <<'POS7PY'
-          #!/usr/bin/env python3
-          """Conservative patch for original POS7 owner phone MainActivity.java.
-          Does not touch sync, Firebase, push service, or existing JS bridge.
-          Fails closed if original WebChromeClient structure differs.
-          """
+          cat > /tmp/pos7_r56_patch.py <<'POS7PY'
           from pathlib import Path
-          import re
-          p=Path('android-project/POS7_Owner_Phone/app/src/main/java/com/sokkarzeyedeh/pos7owner/MainActivity.java')
-          if not p.is_file(): raise SystemExit('Original MainActivity.java not found')
+          import re,sys
+          p=Path(sys.argv[1])
           s=p.read_text('utf-8')
-          if 'POS7_R53_CAMERA_CAPTURE' in s:
-              print('Camera patch already applied')
-              raise SystemExit(0)
-          if 'onShowFileChooser' in s:
-              raise SystemExit('Existing onShowFileChooser found: manual review required, no unsafe overwrite')
-          # Insert override in anonymous WebChromeClient, retaining all original handlers.
-          pattern=r'(setWebChromeClient\s*\(\s*new\s+(?:android\.webkit\.)?WebChromeClient\s*\(\s*\)\s*\{)'
-          match=list(re.finditer(pattern,s))
-          if len(match)!=1:
-              raise SystemExit(f'Expected exactly one anonymous WebChromeClient, found {len(match)}; stop without altering app')
-          # Avoid collisions with existing activity results.
-          if re.search(r'\bvoid\s+onActivityResult\s*\(',s):
-              raise SystemExit('Existing onActivityResult requires manual merge; stop to preserve native behavior')
-          fields='''
-              // POS7_R53_CAMERA_CAPTURE: temporary image URI and WebView file selection callback.
-              private android.webkit.ValueCallback<android.net.Uri[]> pos7R53FileCallback;
-              private android.net.Uri pos7R53CameraUri;
-              private static final int POS7_R53_CAMERA_REQUEST = 53144;
+          if 'POS7_R56_CAMERA_CAPTURE' in s:
+           print('R56 already present');sys.exit(0)
           
-              @Override
-              protected void onActivityResult(int requestCode, int resultCode, android.content.Intent data) {
-                  if (requestCode == POS7_R53_CAMERA_REQUEST) {
-                      android.webkit.ValueCallback<android.net.Uri[]> cb = pos7R53FileCallback;
-                      pos7R53FileCallback = null;
-                      android.net.Uri captured = pos7R53CameraUri;
-                      pos7R53CameraUri = null;
+          def method_span(text, signature):
+           m=re.search(signature,text)
+           if not m:return None
+           start=text.find('{',m.end()-1)
+           if start<0:return None
+           depth=0; i=start; quote=None; esc=False; line=False; block=False
+           while i<len(text):
+            c=text[i];n=text[i+1] if i+1<len(text) else ''
+            if line:
+             if c=='\n':line=False
+            elif block:
+             if c=='*' and n=='/':block=False;i+=1
+            elif quote:
+             if esc:esc=False
+             elif c=='\\':esc=True
+             elif c==quote:quote=None
+            elif c=='/' and n=='/':line=True;i+=1
+            elif c=='/' and n=='*':block=True;i+=1
+            elif c in ('"',"'"):quote=c
+            elif c=='{':depth+=1
+            elif c=='}':
+             depth-=1
+             if depth==0:return (m.start(),start,i+1)
+            i+=1
+           raise SystemExit('Unbalanced Java braces')
+          
+          chooser=method_span(s,r'\bboolean\s+onShowFileChooser\s*\(')
+          if not chooser:raise SystemExit('Original chooser missing; no automatic replacement')
+          if len(re.findall(r'\bboolean\s+onShowFileChooser\s*\(',s))!=1:raise SystemExit('Ambiguous chooser')
+          cls=re.search(r'\bclass\s+MainActivity\b[^\{]*\{',s)
+          if not cls:raise SystemExit('MainActivity class missing')
+          # Keep all existing non-camera activity result behavior intact.
+          fields='''
+              // POS7_R56_CAMERA_CAPTURE: isolated native WebView camera request.
+              private android.webkit.ValueCallback<android.net.Uri[]> pos7R56Callback;
+              private android.net.Uri pos7R56Uri;
+              private static final int POS7_R56_CAMERA_REQUEST = 56144;
+              private static final int POS7_R56_PICK_REQUEST = 56145;
+          '''
+          s=s[:cls.end()]+fields+s[cls.end():]
+          chooser=method_span(s,r'\bboolean\s+onShowFileChooser\s*\(')
+          # preserve original function signature, replace only implementation
+          method='''{
+                  // POS7_R56_CAMERA_CAPTURE: capture=environment opens the camera directly.
+                  if (pos7R56Callback != null) {
+                      pos7R56Callback.onReceiveValue(null);
+                      pos7R56Callback = null;
+                  }
+                  if (filePathCallback == null) return false;
+                  boolean capture = fileChooserParams != null && fileChooserParams.isCaptureEnabled();
+                  if (!capture) {
+                      try {
+                          android.content.Intent pick = fileChooserParams != null
+                              ? fileChooserParams.createIntent()
+                              : new android.content.Intent(android.content.Intent.ACTION_GET_CONTENT)
+                                  .setType("image/*").addCategory(android.content.Intent.CATEGORY_OPENABLE);
+                          pos7R56Callback = filePathCallback;
+                          startActivityForResult(pick, POS7_R56_PICK_REQUEST);
+                          return true;
+                      } catch (Exception e) {
+                          pos7R56Callback = null;
+                          filePathCallback.onReceiveValue(null);
+                          return true;
+                      }
+                  }
+                  android.net.Uri uri = null;
+                  try {
+                      android.content.ContentValues values = new android.content.ContentValues();
+                      values.put(android.provider.MediaStore.Images.Media.DISPLAY_NAME,
+                          "POS7_" + System.currentTimeMillis() + ".jpg");
+                      values.put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
+                      uri = getContentResolver().insert(
+                          android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+                      if (uri == null) throw new IllegalStateException("Cannot create camera URI");
+                      android.content.Intent camera = new android.content.Intent(
+                          android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
+                      camera.putExtra(android.provider.MediaStore.EXTRA_OUTPUT, uri);
+                      camera.putExtra("android.intent.extras.CAMERA_FACING", 0);
+                      camera.putExtra("android.intent.extra.USE_FRONT_CAMERA", false);
+                      camera.addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION |
+                          android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                      camera.setClipData(android.content.ClipData.newRawUri("POS7 photo", uri));
+                      pos7R56Uri = uri;
+                      pos7R56Callback = filePathCallback;
+                      startActivityForResult(camera, POS7_R56_CAMERA_REQUEST);
+                      return true;
+                  } catch (Exception e) {
+                      if (uri != null) try { getContentResolver().delete(uri, null, null); }
+                          catch (Exception ignored) {}
+                      pos7R56Uri = null;
+                      pos7R56Callback = null;
+                      filePathCallback.onReceiveValue(null);
+                      return true;
+                  }
+              }'''
+          # Check signature expected names, don't change unknown API.
+          header=s[chooser[0]:chooser[1]]
+          if not all(n in header for n in ('filePathCallback','fileChooserParams')):
+           raise SystemExit('Original chooser parameter names differ; stop safely')
+          s=s[:chooser[1]]+method+s[chooser[2]:]
+          result='''
+                  // POS7_R56_CAMERA_CAPTURE: return captured/picked image to WebView.
+                  if (requestCode == POS7_R56_CAMERA_REQUEST || requestCode == POS7_R56_PICK_REQUEST) {
+                      android.webkit.ValueCallback<android.net.Uri[]> cb = pos7R56Callback;
+                      pos7R56Callback = null;
+                      android.net.Uri captured = pos7R56Uri;
+                      pos7R56Uri = null;
                       if (cb != null) {
-                          if (resultCode == android.app.Activity.RESULT_OK && captured != null) {
-                              cb.onReceiveValue(new android.net.Uri[]{captured});
+                          if (requestCode == POS7_R56_CAMERA_REQUEST) {
+                              if (resultCode == android.app.Activity.RESULT_OK && captured != null)
+                                  cb.onReceiveValue(new android.net.Uri[]{captured});
+                              else {
+                                  if (captured != null) try { getContentResolver().delete(captured, null, null); }
+                                      catch (Exception ignored) {}
+                                  cb.onReceiveValue(null);
+                              }
                           } else {
-                              if (captured != null) try { getContentResolver().delete(captured, null, null); } catch (Exception ignored) {}
-                              cb.onReceiveValue(null);
+                              cb.onReceiveValue(android.webkit.WebChromeClient.FileChooserParams.parseResult(resultCode, data));
                           }
                       }
                       return;
                   }
-                  super.onActivityResult(requestCode, resultCode, data);
+          '''
+          activity=method_span(s,r'\bvoid\s+onActivityResult\s*\(')
+          if activity:
+           head=s[activity[0]:activity[1]]
+           if not all(n in head for n in ('requestCode','resultCode','data')):
+            raise SystemExit('Existing onActivityResult parameter names differ; stop safely')
+           s=s[:activity[1]+1]+result+s[activity[1]+1:]
+          else:
+           cm=re.search(r'\bclass\s+MainActivity\b[^\{]*\{',s)
+           s=s[:cm.end()]+'''
+              @Override
+              protected void onActivityResult(int requestCode, int resultCode, android.content.Intent data) {
+          '''+result+'''        super.onActivityResult(requestCode, resultCode, data);
               }
-          '''
-          # Locate class opening, ensure it's the activity class (not nested).
-          class_match=re.search(r'\bclass\s+MainActivity\b[^\{]*\{',s)
-          if not class_match: raise SystemExit('MainActivity class declaration missing')
-          s=s[:class_match.end()]+fields+s[class_match.end():]
-          # Find WebChromeClient again after insertion
-          m=re.search(pattern,s)
-          method='''
-                      // POS7_R53_CAMERA_CAPTURE: honor HTML capture=environment in Android APK.
-                      @Override
-                      public boolean onShowFileChooser(android.webkit.WebView webView,
-                              android.webkit.ValueCallback<android.net.Uri[]> filePathCallback,
-                              android.webkit.WebChromeClient.FileChooserParams fileChooserParams) {
-                          if (pos7R53FileCallback != null) {
-                              pos7R53FileCallback.onReceiveValue(null);
-                              pos7R53FileCallback = null;
-                          }
-                          if (fileChooserParams == null || !fileChooserParams.isCaptureEnabled()) {
-                              // Preserve Android's normal chooser for other file inputs.
-                              try {
-                                  android.content.Intent chooser = fileChooserParams != null
-                                      ? fileChooserParams.createIntent()
-                                      : new android.content.Intent(android.content.Intent.ACTION_GET_CONTENT)
-                                          .setType("image/*").addCategory(android.content.Intent.CATEGORY_OPENABLE);
-                                  pos7R53FileCallback = filePathCallback;
-                                  startActivityForResult(chooser, POS7_R53_PICK_REQUEST);
-                                  return true;
-                              } catch (Exception e) {
-                                  pos7R53FileCallback = null;
-                                  return false;
-                              }
-                          }
-                          try {
-                              android.content.ContentValues values = new android.content.ContentValues();
-                              values.put(android.provider.MediaStore.Images.Media.DISPLAY_NAME,
-                                  "POS7_" + System.currentTimeMillis() + ".jpg");
-                              values.put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
-                              android.net.Uri uri = getContentResolver().insert(
-                                  android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
-                              if (uri == null) return false;
-                              android.content.Intent camera = new android.content.Intent(
-                                  android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
-                              camera.putExtra(android.provider.MediaStore.EXTRA_OUTPUT, uri);
-                              camera.putExtra("android.intent.extras.CAMERA_FACING", 0);
-                              camera.putExtra("android.intent.extra.USE_FRONT_CAMERA", false);
-                              camera.addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION |
-                                  android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-                              camera.setClipData(android.content.ClipData.newRawUri("POS7 photo", uri));
-                              pos7R53CameraUri = uri;
-                              pos7R53FileCallback = filePathCallback;
-                              startActivityForResult(camera, POS7_R53_CAMERA_REQUEST);
-                              return true;
-                          } catch (Exception e) {
-                              if (pos7R53CameraUri != null) {
-                                  try { getContentResolver().delete(pos7R53CameraUri, null, null); }
-                                  catch (Exception ignored) {}
-                              }
-                              pos7R53CameraUri = null;
-                              pos7R53FileCallback = null;
-                              return false;
-                          }
-                      }
-          '''
-          # add separate picker request handling, preserve selected Uri via standard WebChromeClient parser.
-          s=s.replace('private static final int POS7_R53_CAMERA_REQUEST = 53144;', 'private static final int POS7_R53_CAMERA_REQUEST = 53144;\n    private static final int POS7_R53_PICK_REQUEST = 53145;')
-          s=s.replace('if (requestCode == POS7_R53_CAMERA_REQUEST) {','if (requestCode == POS7_R53_PICK_REQUEST) {\n            android.webkit.ValueCallback<android.net.Uri[]> cb = pos7R53FileCallback;\n            pos7R53FileCallback = null;\n            if (cb != null) cb.onReceiveValue(android.webkit.WebChromeClient.FileChooserParams.parseResult(resultCode, data));\n            return;\n        }\n        if (requestCode == POS7_R53_CAMERA_REQUEST) {')
-          m=re.search(pattern,s)
-          s=s[:m.end()]+method+s[m.end():]
+          '''+s[cm.end():]
           p.write_text(s,'utf-8')
-          assert s.count('POS7_R53_CAMERA_CAPTURE')>=2
-          print('Patched native WebChromeClient camera capture; preserved original MainActivity and FCM')
+          print('R56: merged existing onShowFileChooser and onActivityResult without removing other activity handlers')
           POS7PY
-          python3 /tmp/pos7_r53_patch.py
+          python3 /tmp/pos7_r56_patch.py android-project/POS7_Owner_Phone/app/src/main/java/com/sokkarzeyedeh/pos7owner/MainActivity.java
       - name: Verify Android camera chooser before release
         shell: bash
         run: |
@@ -211,7 +238,7 @@ jobs:
           src=Path('android-project/POS7_Owner_Phone/app/src/main/java/com/sokkarzeyedeh/pos7owner/MainActivity.java')
           if not src.is_file(): raise SystemExit('MainActivity.java missing: cannot validate native camera capture')
           java=src.read_text(encoding='utf-8')
-          if 'POS7_R53_CAMERA_CAPTURE' not in java or 'onShowFileChooser' not in java or 'ACTION_IMAGE_CAPTURE' not in java:
+          if 'POS7_R56_CAMERA_CAPTURE' not in java or 'onShowFileChooser' not in java or 'ACTION_IMAGE_CAPTURE' not in java:
               raise SystemExit('Camera fix NOT VERIFIED in native Android WebView; stop release rather than publish Gallery-only APK. Update MainActivity.java camera capture handling first.')
           print('Native camera capture handler detected. Device testing is still required.')
           PYCODE
