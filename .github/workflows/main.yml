@@ -1,22 +1,23 @@
-name: POS7 TABLET 485.7.225 R40 - SAFE UPGRADE CODE
+name: POS7 OWNER PHONE v485.7.143 - ORIGINAL SIGNED
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/main.yml'
-      - 'POS7_Tablet_v485.7.225_R36_SOURCE.zip'
   workflow_dispatch:
     inputs:
       installed_version_code:
-        description: "Installed Android versionCode (optional, not versionName)"
+        description: 'Real installed phone versionCode; optional but recommended'
         required: false
+        default: ''
         type: string
+  push:
+    branches: [main]
+    paths:
+      - 'POS7_Phone_v485.7.143_HTML_OVERLAY.zip'
+      - '.github/workflows/main.yml'
 permissions:
   contents: read
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -27,112 +28,127 @@ jobs:
         with:
           gradle-version: '8.9'
       - uses: android-actions/setup-android@v4
-      - name: Install Android SDK
-        run: sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
-      - name: Unpack exact R36 archive and refuse old sources
+      - run: sdkmanager --install 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Extract original phone source and install approved HTML
         shell: bash
         run: |
           set -euo pipefail
-          archive='POS7_Tablet_v485.7.225_R36_SOURCE.zip'
-          test -f "$archive" || { echo "ERROR: R36 ZIP is not uploaded to repository root"; exit 1; }
-          printf '%s  %s\n' '3186dae14b9cf4f219ba44487314f07f2c4b137f7daaefe8b8c5f39f022e55c1' "$archive" | sha256sum -c -
-          mkdir -p "$RUNNER_TEMP/pos7-r36"
-          unzip -q "$archive" -d "$RUNNER_TEMP/pos7-r36"
-          test -f "$RUNNER_TEMP/pos7-r36/POS7_Tablet/app/build.gradle"
-          test -f "$RUNNER_TEMP/pos7-r36/POS7_Tablet/app/src/main/assets/index.html"
-          echo "POS7_SOURCE=$RUNNER_TEMP/pos7-r36/POS7_Tablet" >> "$GITHUB_ENV"
-          python3 - "$RUNNER_TEMP/pos7-r36/POS7_Tablet" <<'PYVERIFY'
-          import sys,re
+          python3 - <<'PYCODE'
           from pathlib import Path
-          p=Path(sys.argv[1]); h=(p/'app/src/main/assets/index.html').read_text(); g=(p/'app/build.gradle').read_text()
-          import hashlib
-          assert hashlib.sha256((p/'app/src/main/assets/index.html').read_bytes()).hexdigest() == '27373e48f7e695bd5dfe899eb3acdc22d414a0da4b297bf4aa5fa49c5d2619bf', 'SOURCE HTML CHANGED'
-          assert "window.POS7_APP_VERSION='485.7.225'" in h, 'WRONG HTML VERSION' 
-          assert 'pos7-photo-sync-r34' in h and 'pos7PhotoRun' in h and 'pos7OpenPhotoCard' in h, 'PHOTO CARD MISSING'
-          assert "versionName '485.7.225'" in g, 'WRONG ANDROID VERSION'
-          assert "applicationId 'com.sokkarzeyedeh.pos7'" in g, 'WRONG PACKAGE'
-          print('VERIFIED: 225 + R34 photo sync card + original package')
-          PYVERIFY
-      - name: Validate JavaScript in R36 HTML
-        run: cd "$POS7_SOURCE" && python3 ci/validate.py
-      - name: Verify original signing key before build
+          from zipfile import ZipFile
+          import hashlib,re
+          root=Path('android-project').resolve()
+          src=Path('POS7_Phone_v485.7.136_Photos_Android_Project.zip')
+          overlay=Path('POS7_Phone_v485.7.143_HTML_OVERLAY.zip')
+          if not src.is_file() or not overlay.is_file(): raise SystemExit('Missing source or overlay ZIP')
+          for archive in (src,overlay):
+              with ZipFile(archive) as z:
+                  if z.testzip(): raise SystemExit('Corrupt ZIP '+str(archive))
+                  if archive==src:
+                      for i in z.infolist():
+                          if not (root/i.filename).resolve().is_relative_to(root): raise SystemExit('Unsafe ZIP path')
+                      z.extractall(root)
+                  else:
+                      html=z.read('index.html')
+          expected='7887566735f2acc3edbfde8e6fa133e5554a2c5989a4ec8e7a0d4ff972590309'
+          if hashlib.sha256(html).hexdigest()!=expected: raise SystemExit('HTML SHA mismatch')
+          text=html.decode('utf-8')
+          if 'v485.7.143' not in text or 'إضافة صور المنتجات' not in text: raise SystemExit('Wrong phone HTML')
+          app=root/'POS7_Owner_Phone'
+          dest=app/'app/src/main/assets/index.html'
+          if not dest.is_file(): raise SystemExit('Original phone assets missing')
+          gradle=app/'app/build.gradle'
+          s=gradle.read_text('utf-8')
+          if "applicationId 'com.sokkarzeyedeh.pos7owner'" not in s: raise SystemExit('Package mismatch')
+          s,n=re.subn(r"versionName\s+['\"][^'\"]+['\"]", "versionName '485.7.143'",s,count=1)
+          if n!=1: raise SystemExit('Cannot set versionName')
+          gradle.write_text(s)
+          dest.write_bytes(html)
+          native=app/'app/src/main/java/com/sokkarzeyedeh/pos7owner/Pos7MessagingService.java'
+          if not native.is_file(): raise SystemExit('Native FCM service missing')
+          print('Phone HTML SHA256:',expected)
+          PYCODE
+      - name: Verify JavaScript syntax
+        run: |
+          python3 - <<'PYCODE'
+          from html.parser import HTMLParser
+          from pathlib import Path
+          import subprocess
+          class P(HTMLParser):
+              def __init__(self): super().__init__(); self.in_script=False; self.blocks=[]
+              def handle_starttag(self,t,a):
+                  if t=='script':
+                      self.in_script=not any(k=='src' for k,v in a)
+                      if self.in_script:self.blocks.append('')
+              def handle_endtag(self,t):
+                  if t=='script':self.in_script=False
+              def handle_data(self,d):
+                  if self.in_script:self.blocks[-1]+=d
+          p=P();p.feed(Path('android-project/POS7_Owner_Phone/app/src/main/assets/index.html').read_text())
+          for i,b in enumerate(p.blocks):
+              if not b.strip():continue
+              x=subprocess.run(['node','--check'],input=b,text=True,capture_output=True)
+              if x.returncode:raise SystemExit('JavaScript block '+str(i)+' '+x.stderr)
+          print('JS syntax checked:',len(p.blocks))
+          PYCODE
+      - name: Configure upgrade-safe versionCode
+        env:
+          INSTALLED_CODE: ${{ inputs.installed_version_code }}
+        run: |
+          python3 - <<'PYCODE'
+          import os
+          raw=os.environ.get('INSTALLED_CODE','').strip()
+          if raw and not raw.isdecimal():raise SystemExit('Invalid installed_version_code')
+          code=max(48510000+int(os.environ['GITHUB_RUN_NUMBER']),48509151,int(raw)+1 if raw else 0)
+          if code>2100000000:raise SystemExit('versionCode too high')
+          with open(os.environ['GITHUB_ENV'],'a') as f:f.write(f'POS7_VERSION_CODE={code}\n')
+          print('Phone versionCode',code)
+          PYCODE
+      - name: Verify original release keystore
         env:
           POS7_KEYSTORE_BASE64: ${{ secrets.POS7_KEYSTORE_BASE64 }}
           POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
           POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
           POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
-        shell: bash
         run: |
           set -euo pipefail
-          for x in POS7_KEYSTORE_BASE64 POS7_KEYSTORE_PASSWORD POS7_KEY_ALIAS POS7_KEY_PASSWORD; do
-            test -n "${!x:-}" || { echo "Missing original secret: $x"; exit 1; }
+          for n in POS7_KEYSTORE_BASE64 POS7_KEYSTORE_PASSWORD POS7_KEY_ALIAS POS7_KEY_PASSWORD; do
+            if [[ -z "${!n:-}" ]]; then echo "Missing signing secret $n"; exit 1; fi
           done
           umask 077
-          printf '%s' "$POS7_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/pos7-original.jks"
-          cert=$(keytool -exportcert -keystore "$RUNNER_TEMP/pos7-original.jks" -storepass:env POS7_KEYSTORE_PASSWORD -alias "$POS7_KEY_ALIAS" | sha256sum | awk '{print $1}')
-          test "$cert" = '843ed618b18ec7a0cbb50f38984374540da016c41a8df8042bb8db19964d4495' || { echo 'WRONG SIGNER: build refused'; exit 1; }
+          printf '%s' "$POS7_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/pos7-original.jks"
+          actual=$(keytool -exportcert -keystore "$RUNNER_TEMP/pos7-original.jks" -storepass:env POS7_KEYSTORE_PASSWORD -alias "$POS7_KEY_ALIAS" | sha256sum | awk '{print $1}')
+          expected=843ed618b18ec7a0cbb50f38984374540da016c41a8df8042bb8db19964d4495
+          if [[ "$actual" != "$expected" ]]; then echo 'Original certificate mismatch'; exit 1; fi
           echo "POS7_KEYSTORE_PATH=$RUNNER_TEMP/pos7-original.jks" >> "$GITHUB_ENV"
-          echo "POS7_EXPECTED_CERT=$cert" >> "$GITHUB_ENV"
-      - name: Determine update-safe versionCode
-        shell: bash
-        env:
-          INSTALLED_CODE: ${{ inputs.installed_version_code }}
-        run: |
-          set -euo pipefail
-          python3 - <<'PYCODE'
-          import os
-          raw=(os.getenv('INSTALLED_CODE') or '').strip()
-          if raw and (not raw.isascii() or not raw.isdecimal()):
-              raise SystemExit('Invalid installed versionCode')
-          # Original successful v485.7.209 reference uses 48508396 as its baseline.
-          # R39 run #167 may already be 48508409, so do not assume versionCode
-          # alone caused installation failure.
-          code=max(48510000+int(os.environ['GITHUB_RUN_NUMBER']),48508396+1,int(raw)+1 if raw else 0)
-          if code>2100000000:raise SystemExit('versionCode exceeds Android limit')
-          with open(os.environ['GITHUB_ENV'],'a') as f:f.write(f'POS7_VERSION_CODE={code}\n')
-          print('Original 209 baseline versionCode: 48508396')
-          print('New candidate versionCode:',code)
-          print('This does not establish the actual installed device versionCode.')
-          PYCODE
-      - name: Build signed APK only from R36 archive
+      - name: Build signed phone APK
+        working-directory: android-project/POS7_Owner_Phone
         env:
           POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
           POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
           POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
-        shell: bash
+        run: gradle --no-daemon clean assembleRelease
+      - name: Verify final APK and publish files
         run: |
           set -euo pipefail
-          cd "$POS7_SOURCE"
-          gradle --no-daemon clean assembleRelease
-      - name: Verify APK metadata, signature, embedded photo card
-        shell: bash
-        run: |
-          set -euo pipefail
-          apk="$POS7_SOURCE/app/build/outputs/apk/release/app-release.apk"
+          apk=android-project/POS7_Owner_Phone/app/build/outputs/apk/release/app-release.apk
           sdk="$ANDROID_HOME/build-tools/35.0.0"
-          "$sdk/apksigner" verify --verbose "$apk"
-          "$sdk/aapt" dump badging "$apk" | grep -F "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.225'"
-          cert=$("$sdk/apksigner" verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2}' | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')
-          test "$cert" = "$POS7_EXPECTED_CERT"
-          # Avoid grep -q / SIGPIPE failures under pipefail when assets/index.html is large.
-          python3 - "$apk" <<'PYASSET'
-          import sys,zipfile
-          with zipfile.ZipFile(sys.argv[1]) as z: h=z.read('assets/index.html').decode('utf-8')
-          assert "window.POS7_APP_VERSION='485.7.225'" in h, 'WRONG APK HTML VERSION'
-          assert 'pos7-photo-sync-r34' in h and 'pos7OpenPhotoCard' in h and 'pos7PhotoRun' in h, 'MISSING PHOTO CARD IN APK'
-          print('APK HTML verified: 485.7.225 + photo sync R34')
-          PYASSET
+          test -s "$apk"
+          "$sdk/apksigner" verify --verbose --print-certs "$apk" > "$RUNNER_TEMP/certs.txt"
+          "$sdk/aapt" dump badging "$apk" > "$RUNNER_TEMP/badging.txt"
+          grep -F "name='com.sokkarzeyedeh.pos7owner' versionCode='$POS7_VERSION_CODE' versionName='485.7.143'" "$RUNNER_TEMP/badging.txt"
+          cert=$(awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2}' "$RUNNER_TEMP/certs.txt" | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')
+          test "$cert" = 843ed618b18ec7a0cbb50f38984374540da016c41a8df8042bb8db19964d4495
           mkdir -p output
-          cp "$apk" output/POS7_TABLET_v485.7.225_R40_VERIFIED.apk
-          sha256sum output/*.apk > output/SHA256SUMS.txt
-          printf 'ANDROID_VERSION_CODE=%s\\nORIGINAL_209_BASELINE=48508396\\nSIGNING_CERT_SHA256=%s\\n' "$POS7_VERSION_CODE" "$cert" > output/INSTALL_AUDIT.txt
-          printf 'APP=POS7 Tablet\nVERSION=485.7.225\nSOURCE=R36 ZIP SHA256 3186dae14b9cf4f219ba44487314f07f2c4b137f7daaefe8b8c5f39f022e55c1\nAPPLIED=Photo R34\nSIGNED=Original certificate checked\nGITHUB_RUN=%s\n' "$GITHUB_RUN_ID" > output/VERIFIED_BUILD.txt
-      - name: Remove temporary keystore
+          cp "$apk" output/POS7_OWNER_PHONE_v485.7.143_SIGNED.apk
+          printf 'versionName=485.7.143\nversionCode=%s\ncertificateSHA256=%s\n' "$POS7_VERSION_CODE" "$cert" > output/BUILD_INFO.txt
+          (cd output && sha256sum *.apk > SHA256SUMS.txt)
+      - name: Delete temporary keystore
         if: always()
-        shell: bash
         run: rm -f "$RUNNER_TEMP/pos7-original.jks"
       - uses: actions/upload-artifact@v4
         with:
-          name: POS7-TABLET-225-R40-VERIFIED-ONLY
+          name: POS7-OWNER-PHONE-v485.7.143-SIGNED
           path: output/
           if-no-files-found: error
+          retention-days: 30
