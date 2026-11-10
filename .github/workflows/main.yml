@@ -1,10 +1,10 @@
-name: POS7 TABLET 485.7.227 R49 - PHOTO BARCODE FALLBACK
+name: POS7 TABLET 485.7.228 R50 - PHOTO BARCODE FALLBACK
 on:
   push:
     branches: [main]
     paths:
       - '.github/workflows/main.yml'
-      - 'POS7_Tablet_v485.7.227_R49_COMPLETE_PROJECT.zip'
+      - 'POS7_Tablet_v485.7.228_R50_COMPLETE_PROJECT.zip'
   workflow_dispatch:
     inputs:
       installed_version_code:
@@ -29,28 +29,28 @@ jobs:
       - uses: android-actions/setup-android@v4
       - name: Install Android SDK
         run: sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
-      - name: Unpack exact R49 archive and refuse old sources
+      - name: Unpack exact R50 archive and refuse old sources
         shell: bash
         run: |
           set -euo pipefail
-          archive='POS7_Tablet_v485.7.227_R49_COMPLETE_PROJECT.zip'
-          test -f "$archive" || { echo "ERROR: R49 ZIP is not uploaded to repository root"; exit 1; }
-          printf '%s  %s\n' '2adfae3b8f50184c163e73ffde7f4304e27a8407e7e9e38e619bd8eff82b5d83' "$archive" | sha256sum -c -
-          mkdir -p "$RUNNER_TEMP/pos7-r49"
-          unzip -q "$archive" -d "$RUNNER_TEMP/pos7-r49"
-          test -f "$RUNNER_TEMP/pos7-r49/POS7_Tablet/app/build.gradle"
-          test -f "$RUNNER_TEMP/pos7-r49/POS7_Tablet/app/src/main/assets/index.html"
-          echo "POS7_SOURCE=$RUNNER_TEMP/pos7-r49/POS7_Tablet" >> "$GITHUB_ENV"
-          python3 - "$RUNNER_TEMP/pos7-r49/POS7_Tablet" <<'PYVERIFY'
+          archive='POS7_Tablet_v485.7.228_R50_COMPLETE_PROJECT.zip'
+          test -f "$archive" || { echo "ERROR: R50 ZIP is not uploaded to repository root"; exit 1; }
+          printf '%s  %s\n' 'a80645c23cfb5c25db27878f246c904d8d734ba1f7f324cb2d89774aed563f83' "$archive" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/pos7-r50"
+          unzip -q "$archive" -d "$RUNNER_TEMP/pos7-r50"
+          test -f "$RUNNER_TEMP/pos7-r50/POS7_Tablet/app/build.gradle"
+          test -f "$RUNNER_TEMP/pos7-r50/POS7_Tablet/app/src/main/assets/index.html"
+          echo "POS7_SOURCE=$RUNNER_TEMP/pos7-r50/POS7_Tablet" >> "$GITHUB_ENV"
+          python3 - "$RUNNER_TEMP/pos7-r50/POS7_Tablet" <<'PYVERIFY'
           import sys,re
           from pathlib import Path
           p=Path(sys.argv[1]); h=(p/'app/src/main/assets/index.html').read_text(); g=(p/'app/build.gradle').read_text()
           import hashlib
           assert hashlib.sha256((p/'app/src/main/assets/index.html').read_bytes()).hexdigest() == 'f3ad2b26a96c4129e2dea48e21bc8f770001b6ee85f5e76cb9dbf4d33b2ec185', 'SOURCE HTML CHANGED'
-          assert "window.POS7_APP_VERSION='485.7.227'" in h, 'WRONG HTML VERSION' 
-          assert 'const localPid=String(product.id)' in h, 'R49 BARCODE FALLBACK MISSING'
+          assert "window.POS7_APP_VERSION='485.7.228'" in h, 'WRONG HTML VERSION' 
+          assert 'const localPid=String(product.id)' in h, 'R50 BARCODE FALLBACK MISSING'
           assert 'pos7-photo-sync-r34' in h and 'pos7PhotoRun' in h and 'pos7OpenPhotoCard' in h, 'PHOTO CARD MISSING'
-          assert "versionName '485.7.227'" in g, 'WRONG ANDROID VERSION'
+          assert "versionName '485.7.228'" in g, 'WRONG ANDROID VERSION'
           assert "applicationId 'com.sokkarzeyedeh.pos7'" in g, 'WRONG PACKAGE'
           print('VERIFIED: 225 + R34 photo sync card + original package')
           PYVERIFY
@@ -95,7 +95,7 @@ jobs:
           print('New candidate versionCode:',code)
           print('This does not establish the actual installed device versionCode.')
           PYCODE
-      - name: Build signed APK only from R49 archive
+      - name: Build signed APK only from R50 archive
         env:
           POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
           POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
@@ -112,29 +112,29 @@ jobs:
           apk="$POS7_SOURCE/app/build/outputs/apk/release/app-release.apk"
           sdk="$ANDROID_HOME/build-tools/35.0.0"
           "$sdk/apksigner" verify --verbose "$apk"
-          "$sdk/aapt" dump badging "$apk" | grep -F "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.227'"
+          "$sdk/aapt" dump badging "$apk" | grep -F "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.228'"
           cert=$("$sdk/apksigner" verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2}' | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')
           test "$cert" = "$POS7_EXPECTED_CERT"
           # Avoid grep -q / SIGPIPE failures under pipefail when assets/index.html is large.
           python3 - "$apk" <<'PYASSET'
           import sys,zipfile
           with zipfile.ZipFile(sys.argv[1]) as z: h=z.read('assets/index.html').decode('utf-8')
-          assert "window.POS7_APP_VERSION='485.7.227'" in h, 'WRONG APK HTML VERSION'
-          assert 'const localPid=String(product.id)' in h, 'R49 BARCODE FALLBACK MISSING'
+          assert "window.POS7_APP_VERSION='485.7.228'" in h, 'WRONG APK HTML VERSION'
+          assert 'const localPid=String(product.id)' in h, 'R50 BARCODE FALLBACK MISSING'
           assert 'pos7-photo-sync-r34' in h and 'pos7OpenPhotoCard' in h and 'pos7PhotoRun' in h, 'MISSING PHOTO CARD IN APK'
-          print('APK HTML verified: 485.7.227 + photo sync R34')
+          print('APK HTML verified: 485.7.228 + photo sync R34')
           PYASSET
           mkdir -p output
-          cp "$apk" output/POS7_TABLET_v485.7.227_R49_VERIFIED.apk
+          cp "$apk" output/POS7_TABLET_v485.7.228_R50_VERIFIED.apk
           sha256sum output/*.apk > output/SHA256SUMS.txt
           printf 'ANDROID_VERSION_CODE=%s\\nORIGINAL_209_BASELINE=48508396\\nSIGNING_CERT_SHA256=%s\\n' "$POS7_VERSION_CODE" "$cert" > output/INSTALL_AUDIT.txt
-          printf 'APP=POS7 Tablet\nVERSION=485.7.227\nSOURCE=R49 ZIP SHA256 2adfae3b8f50184c163e73ffde7f4304e27a8407e7e9e38e619bd8eff82b5d83\nAPPLIED=Photo R34 + guarded unique barcode fallback R49\nSIGNED=Original certificate checked\nGITHUB_RUN=%s\n' "$GITHUB_RUN_ID" > output/VERIFIED_BUILD.txt
+          printf 'APP=POS7 Tablet\nVERSION=485.7.228\nSOURCE=R50 ZIP SHA256 a80645c23cfb5c25db27878f246c904d8d734ba1f7f324cb2d89774aed563f83\nAPPLIED=Photo R34 + guarded unique barcode fallback R50\nSIGNED=Original certificate checked\nGITHUB_RUN=%s\n' "$GITHUB_RUN_ID" > output/VERIFIED_BUILD.txt
       - name: Remove temporary keystore
         if: always()
         shell: bash
         run: rm -f "$RUNNER_TEMP/pos7-original.jks"
       - uses: actions/upload-artifact@v4
         with:
-          name: POS7-TABLET-227-R49-VERIFIED-ONLY
+          name: POS7-TABLET-227-R50-VERIFIED-ONLY
           path: output/
           if-no-files-found: error
