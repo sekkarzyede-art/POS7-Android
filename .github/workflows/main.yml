@@ -1,4 +1,4 @@
-name: POS7 OWNER PHONE v485.7.143 R42 - FIREBASE FIX
+name: POS7 OWNER PHONE v485.7.143 R43 - ORIGINAL FIREBASE SECRET
 on:
   workflow_dispatch:
     inputs:
@@ -124,19 +124,22 @@ jobs:
       - name: Restore original Firebase configuration for FCM
         shell: bash
         env:
+          POS7_FIREBASE_JSON_BASE64: ${{ secrets.POS7_FIREBASE_JSON_BASE64 }}
           GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
           set -euo pipefail
           dest="android-project/POS7_Owner_Phone/app/google-services.json"
-          if [[ -n "${GOOGLE_SERVICES_JSON_BASE64:-}" ]]; then
+          if [[ -n "${POS7_FIREBASE_JSON_BASE64:-}" ]]; then
+            printf '%s' "$POS7_FIREBASE_JSON_BASE64" | base64 --decode > "$dest"
+          elif [[ -n "${GOOGLE_SERVICES_JSON_BASE64:-}" ]]; then
             printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > "$dest"
           elif [[ -n "${GOOGLE_SERVICES_JSON:-}" ]]; then
             printf '%s' "$GOOGLE_SERVICES_JSON" > "$dest"
           elif [[ -s "$dest" ]]; then
             echo 'Using existing Firebase configuration from original source'
           else
-            echo 'ERROR: Firebase google-services.json missing. Set repository secret GOOGLE_SERVICES_JSON_BASE64 (base64 encoded original phone google-services.json), or GOOGLE_SERVICES_JSON (raw original JSON). Do not use tablet or another Firebase project config.'
+            echo 'ERROR: Firebase google-services.json missing. Expected original secret POS7_FIREBASE_JSON_BASE64; alternatively GOOGLE_SERVICES_JSON_BASE64 (base64 encoded original phone google-services.json), or GOOGLE_SERVICES_JSON (raw original JSON). Do not use tablet or another Firebase project config.'
             exit 1
           fi
           python3 - <<'PYCODE'
