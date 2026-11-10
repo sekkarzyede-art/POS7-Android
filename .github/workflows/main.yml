@@ -50,10 +50,13 @@ jobs:
                       z.extractall(root)
                   else:
                       html=z.read('index.html')
-          expected='c4a59c64c3ba5c836450e7d7447981bc4dcfe4bf6427f99b25211631720bf0e0'
+          expected='414e5ed8b3d3dd669e4bae7ff378dbc211caa67e462573a92cc1720437b94262'
           if hashlib.sha256(html).hexdigest()!=expected: raise SystemExit('HTML SHA mismatch')
           text=html.decode('utf-8')
           if 'v485.7.144' not in text or 'إضافة صور المنتجات' not in text: raise SystemExit('Wrong phone HTML')
+          # Update the stale document title only after verifying the original archive SHA.
+          text=text.replace('<title>سكر زيادة — هاتف المالك v485.7.134</title>', '<title>سكر زيادة — هاتف المالك v485.7.144</title>', 1)
+          html=text.encode('utf-8')
           app=root/'POS7_Owner_Phone'
           dest=app/'app/src/main/assets/index.html'
           if not dest.is_file(): raise SystemExit('Original phone assets missing')
