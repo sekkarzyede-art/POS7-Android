@@ -1,4 +1,4 @@
-name: POS7 OWNER PHONE v485.7.144 R56 - CAMERA MERGE
+name: POS7 OWNER PHONE v485.7.144 R58 - CAMERA PARAMETER SAFE
 on:
   workflow_dispatch:
     inputs:
@@ -184,8 +184,14 @@ jobs:
               }'''
           # Check signature expected names, don't change unknown API.
           header=s[chooser[0]:chooser[1]]
-          if not all(n in header for n in ('filePathCallback','fileChooserParams')):
-           raise SystemExit('Original chooser parameter names differ; stop safely')
+          args=header[header.index('(')+1:header.rindex(')')]
+          parts=[x.strip() for x in args.split(',')]
+          if len(parts)!=2 or 'ValueCallback' not in parts[0] or 'FileChooserParams' not in parts[1]:
+           raise SystemExit('Unexpected chooser signature; stop safely: '+header)
+          cb_name=re.search(r'([A-Za-z_$][\w$]*)\s*$',parts[0]).group(1)
+          params_name=re.search(r'([A-Za-z_$][\w$]*)\s*$',parts[1]).group(1)
+          method=re.sub(r'\bfilePathCallback\b',lambda _:cb_name,method)
+          method=re.sub(r'\bfileChooserParams\b',lambda _:params_name,method)
           s=s[:chooser[1]]+method+s[chooser[2]:]
           result='''
                   // POS7_R56_CAMERA_CAPTURE: return captured/picked image to WebView.
@@ -213,8 +219,12 @@ jobs:
           activity=method_span(s,r'\bvoid\s+onActivityResult\s*\(')
           if activity:
            head=s[activity[0]:activity[1]]
-           if not all(n in head for n in ('requestCode','resultCode','data')):
-            raise SystemExit('Existing onActivityResult parameter names differ; stop safely')
+           args=head[head.index('(')+1:head.rindex(')')]
+           parts=[x.strip() for x in args.split(',')]
+           if len(parts)!=3:raise SystemExit('Unexpected onActivityResult signature')
+           names=[re.search(r'([A-Za-z_$][\w$]*)\s*$',x).group(1) for x in parts]
+           for old_name,new_name in zip(('requestCode','resultCode','data'),names):
+            result=re.sub(r'\b'+old_name+r'\b',lambda _,n=new_name:n,result)
            s=s[:activity[1]+1]+result+s[activity[1]+1:]
           else:
            cm=re.search(r'\bclass\s+MainActivity\b[^\{]*\{',s)
@@ -347,7 +357,7 @@ jobs:
           cert=$(awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2}' "$RUNNER_TEMP/certs.txt" | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')
           test "$cert" = 843ed618b18ec7a0cbb50f38984374540da016c41a8df8042bb8db19964d4495
           mkdir -p output
-          cp "$apk" output/POS7_OWNER_PHONE_v485.7.144_R53_SIGNED.apk
+          cp "$apk" output/POS7_OWNER_PHONE_v485.7.144_R58_SIGNED.apk
           printf 'versionName=485.7.144\nversionCode=%s\ncertificateSHA256=%s\n' "$POS7_VERSION_CODE" "$cert" > output/BUILD_INFO.txt
           (cd output && sha256sum *.apk > SHA256SUMS.txt)
       - name: Delete temporary keystore
@@ -355,7 +365,7 @@ jobs:
         run: rm -f "$RUNNER_TEMP/pos7-original.jks"
       - uses: actions/upload-artifact@v4
         with:
-          name: POS7-OWNER-PHONE-v485.7.144-R53-SIGNED
+          name: POS7-OWNER-PHONE-v485.7.144-R58-SIGNED
           path: output/
           if-no-files-found: error
           retention-days: 30
