@@ -1,4 +1,4 @@
-name: POS7 OWNER PHONE v485.7.144 R58 - CAMERA PARAMETER SAFE
+name: POS7 OWNER PHONE v485.7.144 R59 - CAMERA SIGNATURE FIX
 on:
   workflow_dispatch:
     inputs:
@@ -186,10 +186,10 @@ jobs:
           header=s[chooser[0]:chooser[1]]
           args=header[header.index('(')+1:header.rindex(')')]
           parts=[x.strip() for x in args.split(',')]
-          if len(parts)!=2 or 'ValueCallback' not in parts[0] or 'FileChooserParams' not in parts[1]:
+          if len(parts)!=3 or 'WebView' not in parts[0] or 'ValueCallback' not in parts[1] or 'FileChooserParams' not in parts[2]:
            raise SystemExit('Unexpected chooser signature; stop safely: '+header)
-          cb_name=re.search(r'([A-Za-z_$][\w$]*)\s*$',parts[0]).group(1)
-          params_name=re.search(r'([A-Za-z_$][\w$]*)\s*$',parts[1]).group(1)
+          cb_name=re.search(r'([A-Za-z_$][\w$]*)\s*$',parts[1]).group(1)
+          params_name=re.search(r'([A-Za-z_$][\w$]*)\s*$',parts[2]).group(1)
           method=re.sub(r'\bfilePathCallback\b',lambda _:cb_name,method)
           method=re.sub(r'\bfileChooserParams\b',lambda _:params_name,method)
           s=s[:chooser[1]]+method+s[chooser[2]:]
