@@ -1,294 +1,141 @@
-name: POS7 OWNER PHONE v485.7.144 R59 - CAMERA SIGNATURE FIX
+name: Build POS7 Owner Phone v485.7.143 R191
+
 on:
   workflow_dispatch:
     inputs:
       installed_version_code:
-        description: 'Real installed phone versionCode; optional but recommended'
+        description: 'Optional installed APK versionCode; leave blank for high-range automatic code'
         required: false
         default: ''
         type: string
-  push:
-    branches: [main]
-    paths:
-      - 'POS7_Phone_v485.7.144_R53_HTML_OVERLAY.zip'
-      - '.github/workflows/main.yml'
+
 permissions:
   contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Java 17
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Prepare Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - uses: android-actions/setup-android@v4
-      - run: sdkmanager --install 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
-      - name: Extract original phone source and install approved HTML
-        shell: bash
+
+      - name: Prepare Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install Android SDK platforms
+        run: sdkmanager --install 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
+
+      - name: Extract and verify phone source
         run: |
           set -euo pipefail
-          python3 - <<'PYCODE'
+          python3 - <<'PY'
+          import zipfile
           from pathlib import Path
-          from zipfile import ZipFile
-          import hashlib,re
-          root=Path('android-project').resolve()
-          src=Path('POS7_Phone_v485.7.136_Photos_Android_Project.zip')
-          overlay=Path('POS7_Phone_v485.7.144_R53_HTML_OVERLAY.zip')
-          if not src.is_file() or not overlay.is_file(): raise SystemExit('Missing source or overlay ZIP')
-          for archive in (src,overlay):
-              with ZipFile(archive) as z:
-                  if z.testzip(): raise SystemExit('Corrupt ZIP '+str(archive))
-                  if archive==src:
-                      for i in z.infolist():
-                          if not (root/i.filename).resolve().is_relative_to(root): raise SystemExit('Unsafe ZIP path')
-                      z.extractall(root)
-                  else:
-                      html=z.read('index.html')
-          expected='414e5ed8b3d3dd669e4bae7ff378dbc211caa67e462573a92cc1720437b94262'
-          if hashlib.sha256(html).hexdigest()!=expected: raise SystemExit('HTML SHA mismatch')
-          text=html.decode('utf-8')
-          if 'إضافة صور المنتجات' not in text: raise SystemExit('Missing product photo button')
-          # Update the stale document title only after verifying the original archive SHA.
-          old_title='<title>سكر زيادة — هاتف المالك v485.7.134</title>'
-          new_title='<title>سكر زيادة — هاتف المالك v485.7.144</title>'
-          if text.count(old_title)!=1: raise SystemExit('Unexpected original HTML title')
-          text=text.replace(old_title, new_title, 1)
-          if new_title not in text: raise SystemExit('HTML title update failed')
-          html=text.encode('utf-8')
-          app=root/'POS7_Owner_Phone'
-          dest=app/'app/src/main/assets/index.html'
-          if not dest.is_file(): raise SystemExit('Original phone assets missing')
-          gradle=app/'app/build.gradle'
-          s=gradle.read_text('utf-8')
-          if "applicationId 'com.sokkarzeyedeh.pos7owner'" not in s: raise SystemExit('Package mismatch')
-          s,n=re.subn(r"versionName\s+['\"][^'\"]+['\"]", "versionName '485.7.144'",s,count=1)
-          if n!=1: raise SystemExit('Cannot set versionName')
-          gradle.write_text(s)
-          dest.write_bytes(html)
-          native=app/'app/src/main/java/com/sokkarzeyedeh/pos7owner/Pos7MessagingService.java'
-          if not native.is_file(): raise SystemExit('Native FCM service missing')
-          print('Phone HTML SHA256:',expected)
-          PYCODE
-      - name: Merge native camera capture into existing WebChromeClient
-        shell: bash
+          src=Path('POS7_Phone_v485.7.143_R191_Project.zip')
+          dest=Path('android-project').resolve()
+          if not src.is_file(): raise SystemExit('Missing POS7_Phone_v485.7.143_R191_Project.zip')
+          with zipfile.ZipFile(src) as z:
+              for info in z.infolist():
+                  target=(dest/info.filename).resolve()
+                  if not target.is_relative_to(dest):
+                      raise SystemExit('Unsafe ZIP entry: '+info.filename)
+              z.extractall(dest)
+          app=dest/'POS7_Owner_Phone'
+          gradle=(app/'app/build.gradle').read_text('utf-8')
+          html=(app/'app/src/main/assets/index.html').read_text('utf-8')
+          manifest=(app/'app/src/main/AndroidManifest.xml').read_text('utf-8')
+          main_java=app/'app/src/main/java/com/sokkarzeyedeh/pos7owner/MainActivity.java'
+          fcm_java=app/'app/src/main/java/com/sokkarzeyedeh/pos7owner/Pos7MessagingService.java'
+          checks=[
+            ("applicationId 'com.sokkarzeyedeh.pos7owner'" in gradle,'package ID'),
+            ("versionName '485.7.143-r191'" in gradle,'versionName'),
+            ('r105-inventory-send' in html,'phone inventory sender'),
+            ('r115-inventory-ack-monitor' in html,'inventory acknowledgement monitor'),
+            ('pos7_owner_commands' in html,'inventory cloud commands'),
+            ('default_notification_channel_id' in manifest,'FCM channel'),
+            (main_java.is_file() and fcm_java.is_file(),'native phone/FCM source'),
+          ]
+          for ok,what in checks:
+              if not ok: raise SystemExit('Source validation failed: '+what)
+          print('v485.7.143-R191 phone source validated')
+          PY
+
+      - name: Validate embedded JavaScript
         run: |
-          set -euo pipefail
-          cat > /tmp/pos7_r56_patch.py <<'POS7PY'
-          from pathlib import Path
-          import re,sys
-          p=Path(sys.argv[1])
-          s=p.read_text('utf-8')
-          if 'POS7_R56_CAMERA_CAPTURE' in s:
-           print('R56 already present');sys.exit(0)
-          
-          def method_span(text, signature):
-           m=re.search(signature,text)
-           if not m:return None
-           start=text.find('{',m.end()-1)
-           if start<0:return None
-           depth=0; i=start; quote=None; esc=False; line=False; block=False
-           while i<len(text):
-            c=text[i];n=text[i+1] if i+1<len(text) else ''
-            if line:
-             if c=='\n':line=False
-            elif block:
-             if c=='*' and n=='/':block=False;i+=1
-            elif quote:
-             if esc:esc=False
-             elif c=='\\':esc=True
-             elif c==quote:quote=None
-            elif c=='/' and n=='/':line=True;i+=1
-            elif c=='/' and n=='*':block=True;i+=1
-            elif c in ('"',"'"):quote=c
-            elif c=='{':depth+=1
-            elif c=='}':
-             depth-=1
-             if depth==0:return (m.start(),start,i+1)
-            i+=1
-           raise SystemExit('Unbalanced Java braces')
-          
-          chooser=method_span(s,r'\bboolean\s+onShowFileChooser\s*\(')
-          if not chooser:raise SystemExit('Original chooser missing; no automatic replacement')
-          if len(re.findall(r'\bboolean\s+onShowFileChooser\s*\(',s))!=1:raise SystemExit('Ambiguous chooser')
-          cls=re.search(r'\bclass\s+MainActivity\b[^\{]*\{',s)
-          if not cls:raise SystemExit('MainActivity class missing')
-          # Keep all existing non-camera activity result behavior intact.
-          fields='''
-              // POS7_R56_CAMERA_CAPTURE: isolated native WebView camera request.
-              private android.webkit.ValueCallback<android.net.Uri[]> pos7R56Callback;
-              private android.net.Uri pos7R56Uri;
-              private static final int POS7_R56_CAMERA_REQUEST = 56144;
-              private static final int POS7_R56_PICK_REQUEST = 56145;
-          '''
-          s=s[:cls.end()]+fields+s[cls.end():]
-          chooser=method_span(s,r'\bboolean\s+onShowFileChooser\s*\(')
-          # preserve original function signature, replace only implementation
-          method='''{
-                  // POS7_R56_CAMERA_CAPTURE: capture=environment opens the camera directly.
-                  if (pos7R56Callback != null) {
-                      pos7R56Callback.onReceiveValue(null);
-                      pos7R56Callback = null;
-                  }
-                  if (filePathCallback == null) return false;
-                  boolean capture = fileChooserParams != null && fileChooserParams.isCaptureEnabled();
-                  if (!capture) {
-                      try {
-                          android.content.Intent pick = fileChooserParams != null
-                              ? fileChooserParams.createIntent()
-                              : new android.content.Intent(android.content.Intent.ACTION_GET_CONTENT)
-                                  .setType("image/*").addCategory(android.content.Intent.CATEGORY_OPENABLE);
-                          pos7R56Callback = filePathCallback;
-                          startActivityForResult(pick, POS7_R56_PICK_REQUEST);
-                          return true;
-                      } catch (Exception e) {
-                          pos7R56Callback = null;
-                          filePathCallback.onReceiveValue(null);
-                          return true;
-                      }
-                  }
-                  android.net.Uri uri = null;
-                  try {
-                      android.content.ContentValues values = new android.content.ContentValues();
-                      values.put(android.provider.MediaStore.Images.Media.DISPLAY_NAME,
-                          "POS7_" + System.currentTimeMillis() + ".jpg");
-                      values.put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
-                      uri = getContentResolver().insert(
-                          android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
-                      if (uri == null) throw new IllegalStateException("Cannot create camera URI");
-                      android.content.Intent camera = new android.content.Intent(
-                          android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
-                      camera.putExtra(android.provider.MediaStore.EXTRA_OUTPUT, uri);
-                      camera.putExtra("android.intent.extras.CAMERA_FACING", 0);
-                      camera.putExtra("android.intent.extra.USE_FRONT_CAMERA", false);
-                      camera.addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION |
-                          android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-                      camera.setClipData(android.content.ClipData.newRawUri("POS7 photo", uri));
-                      pos7R56Uri = uri;
-                      pos7R56Callback = filePathCallback;
-                      startActivityForResult(camera, POS7_R56_CAMERA_REQUEST);
-                      return true;
-                  } catch (Exception e) {
-                      if (uri != null) try { getContentResolver().delete(uri, null, null); }
-                          catch (Exception ignored) {}
-                      pos7R56Uri = null;
-                      pos7R56Callback = null;
-                      filePathCallback.onReceiveValue(null);
-                      return true;
-                  }
-              }'''
-          # Check signature expected names, don't change unknown API.
-          header=s[chooser[0]:chooser[1]]
-          args=header[header.index('(')+1:header.rindex(')')]
-          parts=[x.strip() for x in args.split(',')]
-          if len(parts)!=3 or 'WebView' not in parts[0] or 'ValueCallback' not in parts[1] or 'FileChooserParams' not in parts[2]:
-           raise SystemExit('Unexpected chooser signature; stop safely: '+header)
-          cb_name=re.search(r'([A-Za-z_$][\w$]*)\s*$',parts[1]).group(1)
-          params_name=re.search(r'([A-Za-z_$][\w$]*)\s*$',parts[2]).group(1)
-          method=re.sub(r'\bfilePathCallback\b',lambda _:cb_name,method)
-          method=re.sub(r'\bfileChooserParams\b',lambda _:params_name,method)
-          s=s[:chooser[1]]+method+s[chooser[2]:]
-          result='''
-                  // POS7_R56_CAMERA_CAPTURE: return captured/picked image to WebView.
-                  if (requestCode == POS7_R56_CAMERA_REQUEST || requestCode == POS7_R56_PICK_REQUEST) {
-                      android.webkit.ValueCallback<android.net.Uri[]> cb = pos7R56Callback;
-                      pos7R56Callback = null;
-                      android.net.Uri captured = pos7R56Uri;
-                      pos7R56Uri = null;
-                      if (cb != null) {
-                          if (requestCode == POS7_R56_CAMERA_REQUEST) {
-                              if (resultCode == android.app.Activity.RESULT_OK && captured != null)
-                                  cb.onReceiveValue(new android.net.Uri[]{captured});
-                              else {
-                                  if (captured != null) try { getContentResolver().delete(captured, null, null); }
-                                      catch (Exception ignored) {}
-                                  cb.onReceiveValue(null);
-                              }
-                          } else {
-                              cb.onReceiveValue(android.webkit.WebChromeClient.FileChooserParams.parseResult(resultCode, data));
-                          }
-                      }
-                      return;
-                  }
-          '''
-          activity=method_span(s,r'\bvoid\s+onActivityResult\s*\(')
-          if activity:
-           head=s[activity[0]:activity[1]]
-           args=head[head.index('(')+1:head.rindex(')')]
-           parts=[x.strip() for x in args.split(',')]
-           if len(parts)!=3:raise SystemExit('Unexpected onActivityResult signature')
-           names=[re.search(r'([A-Za-z_$][\w$]*)\s*$',x).group(1) for x in parts]
-           for old_name,new_name in zip(('requestCode','resultCode','data'),names):
-            result=re.sub(r'\b'+old_name+r'\b',lambda _,n=new_name:n,result)
-           s=s[:activity[1]+1]+result+s[activity[1]+1:]
-          else:
-           cm=re.search(r'\bclass\s+MainActivity\b[^\{]*\{',s)
-           s=s[:cm.end()]+'''
-              @Override
-              protected void onActivityResult(int requestCode, int resultCode, android.content.Intent data) {
-          '''+result+'''        super.onActivityResult(requestCode, resultCode, data);
-              }
-          '''+s[cm.end():]
-          p.write_text(s,'utf-8')
-          print('R56: merged existing onShowFileChooser and onActivityResult without removing other activity handlers')
-          POS7PY
-          python3 /tmp/pos7_r56_patch.py android-project/POS7_Owner_Phone/app/src/main/java/com/sokkarzeyedeh/pos7owner/MainActivity.java
-      - name: Verify Android camera chooser before release
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PYCODE'
-          from pathlib import Path
-          import re
-          src=Path('android-project/POS7_Owner_Phone/app/src/main/java/com/sokkarzeyedeh/pos7owner/MainActivity.java')
-          if not src.is_file(): raise SystemExit('MainActivity.java missing: cannot validate native camera capture')
-          java=src.read_text(encoding='utf-8')
-          if 'POS7_R56_CAMERA_CAPTURE' not in java or 'onShowFileChooser' not in java or 'ACTION_IMAGE_CAPTURE' not in java:
-              raise SystemExit('Camera fix NOT VERIFIED in native Android WebView; stop release rather than publish Gallery-only APK. Update MainActivity.java camera capture handling first.')
-          print('Native camera capture handler detected. Device testing is still required.')
-          PYCODE
-      - name: Verify JavaScript syntax
-        run: |
-          python3 - <<'PYCODE'
+          python3 - <<'PY'
           from html.parser import HTMLParser
           from pathlib import Path
           import subprocess
-          class P(HTMLParser):
-              def __init__(self): super().__init__(); self.in_script=False; self.blocks=[]
-              def handle_starttag(self,t,a):
-                  if t=='script':
-                      self.in_script=not any(k=='src' for k,v in a)
-                      if self.in_script:self.blocks.append('')
-              def handle_endtag(self,t):
-                  if t=='script':self.in_script=False
-              def handle_data(self,d):
-                  if self.in_script:self.blocks[-1]+=d
-          p=P();p.feed(Path('android-project/POS7_Owner_Phone/app/src/main/assets/index.html').read_text())
-          for i,b in enumerate(p.blocks):
-              if not b.strip():continue
-              x=subprocess.run(['node','--check'],input=b,text=True,capture_output=True)
-              if x.returncode:raise SystemExit('JavaScript block '+str(i)+' '+x.stderr)
-          print('JS syntax checked:',len(p.blocks))
-          PYCODE
-      - name: Configure upgrade-safe versionCode
+          class JSParser(HTMLParser):
+              def __init__(self): super().__init__(); self.active=False; self.scripts=[]
+              def handle_starttag(self,tag,attrs):
+                  if tag=='script': self.active=True; self.scripts.append('')
+              def handle_endtag(self,tag):
+                  if tag=='script': self.active=False
+              def handle_data(self,data):
+                  if self.active: self.scripts[-1]+=data
+          parser=JSParser()
+          parser.feed(Path('android-project/POS7_Owner_Phone/app/src/main/assets/index.html').read_text('utf-8'))
+          for i,script in enumerate(parser.scripts):
+              if not script.strip(): continue
+              result=subprocess.run(['node','--check'],input=script,text=True,capture_output=True)
+              if result.returncode:
+                  raise SystemExit(f'Inline script {i} failed: {result.stderr}')
+          print('HTML JavaScript syntax OK:',len(parser.scripts),'script tags')
+          PY
+
+      - name: Assign upgrade-safe versionCode
         env:
           INSTALLED_CODE: ${{ inputs.installed_version_code }}
         run: |
-          python3 - <<'PYCODE'
+          python3 - <<'PY'
           import os
           raw=os.environ.get('INSTALLED_CODE','').strip()
-          if raw and not raw.isdecimal():raise SystemExit('Invalid installed_version_code')
-          code=max(48510000+int(os.environ['GITHUB_RUN_NUMBER']),48509151,int(raw)+1 if raw else 0)
-          if code>2100000000:raise SystemExit('versionCode too high')
-          with open(os.environ['GITHUB_ENV'],'a') as f:f.write(f'POS7_VERSION_CODE={code}\n')
-          print('Phone versionCode',code)
-          PYCODE
-      - name: Verify original release keystore
+          if raw and (not raw.isascii() or not raw.isdecimal()):
+              raise SystemExit('installed_version_code must contain digits 0-9')
+          code=max(2000000000 + int(os.environ['GITHUB_RUN_NUMBER']), (int(raw)+1 if raw else 0))
+          if code>2100000000: raise SystemExit('versionCode too high')
+          if raw and code<=int(raw): raise SystemExit('Version must exceed installed APK')
+          with open(os.environ['GITHUB_ENV'],'a') as fp:
+              fp.write(f'POS7_VERSION_CODE={code}\n')
+          print('APK versionCode:',code)
+          if not raw: print('WARNING: No installed APK code supplied; high-range code is not proof of upgrade compatibility')
+          PY
+
+      - name: Install the original Firebase configuration
+        env:
+          POS7_FIREBASE_JSON_BASE64: ${{ secrets.POS7_FIREBASE_JSON_BASE64 }}
+        run: |
+          set -euo pipefail
+          test -n "${POS7_FIREBASE_JSON_BASE64:-}" || { echo 'Missing secret: POS7_FIREBASE_JSON_BASE64'; exit 1; }
+          umask 077
+          printf '%s' "$POS7_FIREBASE_JSON_BASE64" | base64 --decode > android-project/POS7_Owner_Phone/app/google-services.json
+          python3 - <<'PY'
+          import json
+          path='android-project/POS7_Owner_Phone/app/google-services.json'
+          with open(path,'r') as f: obj=json.load(f)
+          project=obj.get('project_info',{}).get('project_id')
+          packages=[c.get('client_info',{}).get('android_client_info',{}).get('package_name') for c in obj.get('client',[])]
+          if project!='pos7-owner-notifications':
+              raise SystemExit('Unexpected Firebase project; do not link phone to a different backend')
+          if 'com.sokkarzeyedeh.pos7owner' not in packages:
+              raise SystemExit('Unexpected Firebase Android package')
+          print('Firebase project/package IDs OK')
+          PY
+
+      - name: Verify original release signature
         env:
           POS7_KEYSTORE_BASE64: ${{ secrets.POS7_KEYSTORE_BASE64 }}
           POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
@@ -296,76 +143,56 @@ jobs:
           POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          for n in POS7_KEYSTORE_BASE64 POS7_KEYSTORE_PASSWORD POS7_KEY_ALIAS POS7_KEY_PASSWORD; do
-            if [[ -z "${!n:-}" ]]; then echo "Missing signing secret $n"; exit 1; fi
+          for key in POS7_KEYSTORE_BASE64 POS7_KEYSTORE_PASSWORD POS7_KEY_ALIAS POS7_KEY_PASSWORD; do
+            if [[ -z "${!key:-}" ]]; then echo "Missing signing secret: $key"; exit 1; fi
           done
+          keyfile="$RUNNER_TEMP/pos7-release.jks"
           umask 077
-          printf '%s' "$POS7_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/pos7-original.jks"
-          actual=$(keytool -exportcert -keystore "$RUNNER_TEMP/pos7-original.jks" -storepass:env POS7_KEYSTORE_PASSWORD -alias "$POS7_KEY_ALIAS" | sha256sum | awk '{print $1}')
-          expected=843ed618b18ec7a0cbb50f38984374540da016c41a8df8042bb8db19964d4495
-          if [[ "$actual" != "$expected" ]]; then echo 'Original certificate mismatch'; exit 1; fi
-          echo "POS7_KEYSTORE_PATH=$RUNNER_TEMP/pos7-original.jks" >> "$GITHUB_ENV"
-      - name: Restore original Firebase configuration for FCM
-        shell: bash
-        env:
-          POS7_FIREBASE_JSON_BASE64: ${{ secrets.POS7_FIREBASE_JSON_BASE64 }}
-          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
-          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
-        run: |
-          set -euo pipefail
-          dest="android-project/POS7_Owner_Phone/app/google-services.json"
-          if [[ -n "${POS7_FIREBASE_JSON_BASE64:-}" ]]; then
-            printf '%s' "$POS7_FIREBASE_JSON_BASE64" | base64 --decode > "$dest"
-          elif [[ -n "${GOOGLE_SERVICES_JSON_BASE64:-}" ]]; then
-            printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > "$dest"
-          elif [[ -n "${GOOGLE_SERVICES_JSON:-}" ]]; then
-            printf '%s' "$GOOGLE_SERVICES_JSON" > "$dest"
-          elif [[ -s "$dest" ]]; then
-            echo 'Using existing Firebase configuration from original source'
-          else
-            echo 'ERROR: Firebase google-services.json missing. Expected original secret POS7_FIREBASE_JSON_BASE64; alternatively GOOGLE_SERVICES_JSON_BASE64 (base64 encoded original phone google-services.json), or GOOGLE_SERVICES_JSON (raw original JSON). Do not use tablet or another Firebase project config.'
+          printf '%s' "$POS7_KEYSTORE_BASE64" | base64 --decode > "$keyfile"
+          expected='843ed618b18ec7a0cbb50f38984374540da016c41a8df8042bb8db19964d4495'
+          actual=$(keytool -exportcert -keystore "$keyfile" -storepass:env POS7_KEYSTORE_PASSWORD -alias "$POS7_KEY_ALIAS" | sha256sum | awk '{print $1}')
+          if [[ "$actual" != "$expected" ]]; then
+            echo 'Signing certificate mismatch. Refusing incompatible app update.'
             exit 1
           fi
-          python3 - <<'PYCODE'
-          import json
-          from pathlib import Path
-          p=Path('android-project/POS7_Owner_Phone/app/google-services.json')
-          d=json.loads(p.read_text())
-          packages=[c.get('client_info',{}).get('android_client_info',{}).get('package_name') for c in d.get('client',[])]
-          if 'com.sokkarzeyedeh.pos7owner' not in packages:
-              raise SystemExit('Firebase config package mismatch; expected original phone package com.sokkarzeyedeh.pos7owner')
-          if not d.get('project_info',{}).get('project_id'):
-              raise SystemExit('Firebase project ID missing')
-          print('Original phone Firebase config validated for package; project:',d['project_info']['project_id'])
-          PYCODE
-      - name: Build signed phone APK
+          echo "POS7_KEYSTORE_PATH=$keyfile" >> "$GITHUB_ENV"
+          echo "POS7_SIGNING_CERT_SHA256=$actual" >> "$GITHUB_ENV"
+          echo 'Original release certificate OK'
+
+      - name: Build signed phone release
         working-directory: android-project/POS7_Owner_Phone
         env:
           POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
           POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
           POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
         run: gradle --no-daemon clean assembleRelease
-      - name: Verify final APK and publish files
+
+      - name: Verify APK before upload
         run: |
           set -euo pipefail
-          apk=android-project/POS7_Owner_Phone/app/build/outputs/apk/release/app-release.apk
-          sdk="$ANDROID_HOME/build-tools/35.0.0"
+          apk='android-project/POS7_Owner_Phone/app/build/outputs/apk/release/app-release.apk'
+          tools="$ANDROID_HOME/build-tools/35.0.0"
           test -s "$apk"
-          "$sdk/apksigner" verify --verbose --print-certs "$apk" > "$RUNNER_TEMP/certs.txt"
-          "$sdk/aapt" dump badging "$apk" > "$RUNNER_TEMP/badging.txt"
-          grep -F "name='com.sokkarzeyedeh.pos7owner' versionCode='$POS7_VERSION_CODE' versionName='485.7.144'" "$RUNNER_TEMP/badging.txt"
-          cert=$(awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2}' "$RUNNER_TEMP/certs.txt" | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')
-          test "$cert" = 843ed618b18ec7a0cbb50f38984374540da016c41a8df8042bb8db19964d4495
+          "$tools/apksigner" verify --verbose "$apk"
+          "$tools/aapt" dump badging "$apk" > "$RUNNER_TEMP/pos7-badging.txt"
+          grep -F "package: name='com.sokkarzeyedeh.pos7owner' versionCode='$POS7_VERSION_CODE' versionName='485.7.143-r191'" "$RUNNER_TEMP/pos7-badging.txt"
+          actual=$("$tools/apksigner" verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2}' | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')
+          test "$actual" = "$POS7_SIGNING_CERT_SHA256" || { echo 'Final APK signature mismatch'; exit 1; }
           mkdir -p output
-          cp "$apk" output/POS7_OWNER_PHONE_v485.7.144_R58_SIGNED.apk
-          printf 'versionName=485.7.144\nversionCode=%s\ncertificateSHA256=%s\n' "$POS7_VERSION_CODE" "$cert" > output/BUILD_INFO.txt
-          (cd output && sha256sum *.apk > SHA256SUMS.txt)
-      - name: Delete temporary keystore
-        if: always()
-        run: rm -f "$RUNNER_TEMP/pos7-original.jks"
-      - uses: actions/upload-artifact@v4
+          cp "$apk" output/POS7_Owner_Phone_v485.7.143-R191_Blue.apk
+          sha256sum output/*.apk > output/SHA256SUMS.txt
+          printf 'versionName=485.7.143-r191\nversionCode=%s\ncertificateSHA256=%s\n' "$POS7_VERSION_CODE" "$actual" > output/build-info.txt
+
+      - name: Upload signed APK
+        uses: actions/upload-artifact@v4
         with:
-          name: POS7-OWNER-PHONE-v485.7.144-R58-SIGNED
+          name: POS7-Phone-v485.7.143-R191-${{ env.POS7_VERSION_CODE }}
           path: output/
           if-no-files-found: error
           retention-days: 30
+
+      - name: Remove temporary secrets
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/pos7-release.jks"
+          rm -f android-project/POS7_Owner_Phone/app/google-services.json
