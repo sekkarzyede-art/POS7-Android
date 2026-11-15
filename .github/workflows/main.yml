@@ -1,4 +1,4 @@
-name: Build POS7 Tablet v485.7.229 R205
+name: Build POS7 Tablet v485.7.229 R207
 on:
   workflow_dispatch:
     inputs:
@@ -28,7 +28,7 @@ jobs:
         run: |
           python3 - <<'PY2'
           import zipfile,pathlib
-          z=zipfile.ZipFile('POS7_Tablet_v485.7.229_R205_Project.zip');dest=pathlib.Path('android-project').resolve()
+          z=zipfile.ZipFile('POS7_Tablet_v485.7.229_R207_Project.zip');dest=pathlib.Path('android-project').resolve()
           for i in z.infolist():
               if not (dest/i.filename).resolve().is_relative_to(dest): raise SystemExit('Unsafe ZIP path')
           z.extractall(dest)
@@ -36,8 +36,8 @@ jobs:
           g=(app/'app/build.gradle').read_text()
           assert 'publisher_device' in h and 'pos7_inventory_commit_r155' in h
           assert "applicationId 'com.sokkarzeyedeh.pos7'" in g
-          assert "versionName '485.7.229-r205'" in g
-          print('R205 tablet source verified')
+          assert "versionName '485.7.229-r207'" in g
+          print('R207 tablet source verified')
           PY2
       - name: Check HTML JavaScript syntax
         run: |
@@ -100,16 +100,16 @@ jobs:
           apk=android-project/POS7_Tablet/app/build/outputs/apk/release/app-release.apk
           sdk="$ANDROID_HOME/build-tools/35.0.0"
           "$sdk/apksigner" verify --verbose "$apk"
-          "$sdk/aapt" dump badging "$apk" | grep -F "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.229-r205'"
+          "$sdk/aapt" dump badging "$apk" | grep -F "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.229-r207'"
           actual=$("$sdk/apksigner" verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2}' | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')
           test "$actual" = "$POS7_SIGNING_CERT_SHA256"
           mkdir -p output
-          cp "$apk" output/POS7_Tablet_v485.7.229-R205.apk
+          cp "$apk" output/POS7_Tablet_v485.7.229-R207.apk
           sha256sum output/*.apk > output/SHA256SUMS.txt
-          printf 'versionName=485.7.229-r205\nversionCode=%s\n' "$POS7_VERSION_CODE" > output/build-info.txt
+          printf 'versionName=485.7.229-r207\nversionCode=%s\n' "$POS7_VERSION_CODE" > output/build-info.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: POS7-Tablet-v485.7.229-R205-${{ env.POS7_VERSION_CODE }}
+          name: POS7-Tablet-v485.7.229-R207-${{ env.POS7_VERSION_CODE }}
           path: output/
           if-no-files-found: error
       - name: Delete temporary signing material
