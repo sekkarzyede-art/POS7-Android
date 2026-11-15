@@ -28,7 +28,11 @@ jobs:
         run: |
           python3 - <<'PY2'
           import zipfile,pathlib
-          z=zipfile.ZipFile('POS7_Tablet_v485.7.229_R204_Project.zip');dest=pathlib.Path('android-project').resolve()
+          outer=zipfile.ZipFile('POS7_R204_Build_Ready.zip')
+          nested='POS7_Tablet_v485.7.229_R204_Project.zip'
+          if nested not in outer.namelist(): raise SystemExit('R204 project missing inside build bundle')
+          import io
+          z=zipfile.ZipFile(io.BytesIO(outer.read(nested)));dest=pathlib.Path('android-project').resolve()
           for i in z.infolist():
               if not (dest/i.filename).resolve().is_relative_to(dest): raise SystemExit('Unsafe ZIP path')
           z.extractall(dest)
