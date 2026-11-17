@@ -1,10 +1,11 @@
 
-name: Build POS7 Tablet R213 P1 Diagnostic
+name: Build POS7 Tablet v485.7.230 SAVE P5
+
 on:
   workflow_dispatch:
     inputs:
       installed_version_code:
-        description: 'Optional real installed tablet APK versionCode'
+        description: 'Optional installed tablet versionCode'
         required: false
         default: ''
         type: string
@@ -16,6 +17,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 35
+
     steps:
       - uses: actions/checkout@v4
 
@@ -32,11 +34,12 @@ jobs:
 
       - run: sdkmanager --install 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
 
-      - name: Extract and verify tablet source
+      - name: Extract and verify source
         run: |
           python3 - <<'PY2'
           import zipfile,pathlib
-          z=zipfile.ZipFile('POS7_Tablet_R213_P1_Diagnostic_Project.zip')
+          name='POS7_Tablet_v485.7.230_SAVE_P5_Project.zip'
+          z=zipfile.ZipFile(name)
           dest=pathlib.Path('android-project').resolve()
           for i in z.infolist():
               if not (dest/i.filename).resolve().is_relative_to(dest):
@@ -45,18 +48,19 @@ jobs:
           app=dest/'POS7_Tablet'
           h=(app/'app/src/main/assets/index.html').read_text()
           g=(app/'app/build.gradle').read_text()
-          assert 'publisher_device' in h
           assert 'pos7_inventory_commit_r155' in h
+          assert 'publisher_device' in h
+          assert 'POS7_SAVE_P5_INSTALLED' in h
           assert "applicationId 'com.sokkarzeyedeh.pos7'" in g
-          assert "versionName '485.7.229-r213'" in g
-          print('R213 tablet source verified')
+          assert "versionName '485.7.230-save-p5'" in g
+          print('Source verified')
           PY2
 
-      - name: Check HTML JavaScript syntax
+      - name: Check JavaScript syntax
         run: |
           python3 - <<'PY2'
           from html.parser import HTMLParser
-          import subprocess,pathlib
+          import pathlib,subprocess
           class P(HTMLParser):
               def __init__(self):
                   super().__init__()
@@ -73,13 +77,23 @@ jobs:
                   if self.active:
                       self.s[-1]+=d
           p=P()
-          p.feed(pathlib.Path('android-project/POS7_Tablet/app/src/main/assets/index.html').read_text())
+          p.feed(pathlib.Path(
+            'android-project/POS7_Tablet/app/src/main/assets/index.html'
+          ).read_text())
           for i,s in enumerate(p.s):
               if s.strip():
-                  r=subprocess.run(['node','--check'],input=s,text=True,capture_output=True)
+                  r=subprocess.run(
+                    ['node','--check'],
+                    input=s,text=True,capture_output=True
+                  )
                   if r.returncode:
                       raise SystemExit(f'Script {i}: {r.stderr}')
+          print('JavaScript syntax passed')
           PY2
+
+      - name: Test SAVE-P5
+        working-directory: android-project/POS7_Tablet
+        run: node ci/test_save_p5.js
 
       - name: Set upgrade versionCode
         env:
@@ -88,20 +102,19 @@ jobs:
           python3 - <<'PY2'
           import os
           raw=os.getenv('INSTALLED_CODE','').strip()
-          if raw and (not raw.isascii() or not raw.isdecimal()):
-              raise SystemExit('Invalid installed code')
+          if raw and not raw.isdecimal():
+              raise SystemExit('Invalid versionCode')
           code=max(
               2000000000+int(os.environ['GITHUB_RUN_NUMBER']),
               int(raw)+1 if raw else 0
           )
           if code>2100000000:
-              raise SystemExit('versionCode exceeds Android limit')
+              raise SystemExit('versionCode exceeds limit')
           with open(os.environ['GITHUB_ENV'],'a') as f:
               f.write(f'POS7_VERSION_CODE={code}\n')
-          print('New tablet versionCode:',code)
           PY2
 
-      - name: Verify original tablet release signing certificate
+      - name: Verify original signing certificate
         env:
           POS7_KEYSTORE_BASE64: ${{ secrets.POS7_KEYSTORE_BASE64 }}
           POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
@@ -116,20 +129,21 @@ jobs:
             }
           done
           umask 077
-          printf '%s' "$POS7_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/pos7-tablet-release.jks"
+          printf '%s' "$POS7_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/pos7-release.jks"
           actual=$(keytool -exportcert \
-            -keystore "$RUNNER_TEMP/pos7-tablet-release.jks" \
+            -keystore "$RUNNER_TEMP/pos7-release.jks" \
             -storepass:env POS7_KEYSTORE_PASSWORD \
-            -alias "$POS7_KEY_ALIAS" | sha256sum | awk '{print $1}')
+            -alias "$POS7_KEY_ALIAS" \
+            | sha256sum | awk '{print $1}')
           expected='843ed618b18ec7a0cbb50f38984374540da016c41a8df8042bb8db19964d4495'
           test "$actual" = "$expected" || {
-            echo 'Original tablet signing certificate mismatch'
+            echo 'Signing certificate mismatch'
             exit 1
           }
-          echo "POS7_KEYSTORE_PATH=$RUNNER_TEMP/pos7-tablet-release.jks" >> "$GITHUB_ENV"
+          echo "POS7_KEYSTORE_PATH=$RUNNER_TEMP/pos7-release.jks" >> "$GITHUB_ENV"
           echo "POS7_SIGNING_CERT_SHA256=$actual" >> "$GITHUB_ENV"
 
-      - name: Build signed tablet APK
+      - name: Build signed APK
         working-directory: android-project/POS7_Tablet
         env:
           POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
@@ -137,26 +151,25 @@ jobs:
           POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
         run: gradle --no-daemon clean assembleRelease
 
-      - name: Verify final APK and package
+      - name: Verify APK signature
         run: |
           set -euo pipefail
           apk=android-project/POS7_Tablet/app/build/outputs/apk/release/app-release.apk
           sdk="$ANDROID_HOME/build-tools/35.0.0"
           "$sdk/apksigner" verify --verbose "$apk"
-          "$sdk/aapt" dump badging "$apk" | grep -F "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.229-r213'"
+          "$sdk/aapt" dump badging "$apk" | grep -F "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.230-save-p5'"
           actual=$("$sdk/apksigner" verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2}' | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')
           test "$actual" = "$POS7_SIGNING_CERT_SHA256"
           mkdir -p output
-          cp "$apk" output/POS7_Tablet_R213_P1_DIAGNOSTIC.apk
+          cp "$apk" output/POS7_Tablet_SAVE_P5.apk
           sha256sum output/*.apk > output/SHA256SUMS.txt
-          printf 'versionName=485.7.229-r213\nversionCode=%s\n' "$POS7_VERSION_CODE" > output/build-info.txt
 
       - uses: actions/upload-artifact@v4
         with:
-          name: POS7-Tablet-R213-P1-DIAGNOSTIC-${{ env.POS7_VERSION_CODE }}
+          name: POS7-Tablet-SAVE-P5-${{ env.POS7_VERSION_CODE }}
           path: output/
           if-no-files-found: error
 
       - name: Delete temporary signing material
         if: always()
-        run: rm -f "$RUNNER_TEMP/pos7-tablet-release.jks"
+        run: rm -f "$RUNNER_TEMP/pos7-release.jks"
