@@ -1,5 +1,5 @@
 
-name: Build POS7 Tablet v485.7.230 SAVE P5
+name: Build POS7 Tablet v485.7.231 SAVE P6
 
 on:
   workflow_dispatch:
@@ -34,11 +34,11 @@ jobs:
 
       - run: sdkmanager --install 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
 
-      - name: Extract and verify source
+      - name: Extract and verify tablet source
         run: |
           python3 - <<'PY2'
           import zipfile,pathlib
-          name='POS7_Tablet_v485.7.230_SAVE_P5_Project.zip'
+          name='POS7_Tablet_v485.7.231_SAVE_P6_Project.zip'
           z=zipfile.ZipFile(name)
           dest=pathlib.Path('android-project').resolve()
           for i in z.infolist():
@@ -48,19 +48,18 @@ jobs:
           app=dest/'POS7_Tablet'
           h=(app/'app/src/main/assets/index.html').read_text()
           g=(app/'app/build.gradle').read_text()
-          assert 'pos7_inventory_commit_r155' in h
           assert 'publisher_device' in h
-          assert 'POS7_SAVE_P5_INSTALLED' in h
+          assert 'pos7_inventory_commit_r155' in h
           assert "applicationId 'com.sokkarzeyedeh.pos7'" in g
-          assert "versionName '485.7.230-save-p5'" in g
-          print('Source verified')
+          assert "versionName '485.7.231-save-p6'" in g
+          print('SAVE P6 source verified')
           PY2
 
-      - name: Check JavaScript syntax
+      - name: Check HTML JavaScript syntax
         run: |
           python3 - <<'PY2'
           from html.parser import HTMLParser
-          import pathlib,subprocess
+          import subprocess,pathlib
           class P(HTMLParser):
               def __init__(self):
                   super().__init__()
@@ -91,9 +90,13 @@ jobs:
           print('JavaScript syntax passed')
           PY2
 
-      - name: Test SAVE-P5
+      - name: Test SAVE P6 rendering
         working-directory: android-project/POS7_Tablet
-        run: node ci/test_save_p5.js
+        run: node ci/test_save_p6.js
+
+      - name: Test compressed storage safety
+        working-directory: android-project/POS7_Tablet
+        run: node ci/test_save_p6_compression.js
 
       - name: Set upgrade versionCode
         env:
@@ -102,14 +105,14 @@ jobs:
           python3 - <<'PY2'
           import os
           raw=os.getenv('INSTALLED_CODE','').strip()
-          if raw and not raw.isdecimal():
+          if raw and (not raw.isascii() or not raw.isdecimal()):
               raise SystemExit('Invalid versionCode')
           code=max(
               2000000000+int(os.environ['GITHUB_RUN_NUMBER']),
               int(raw)+1 if raw else 0
           )
           if code>2100000000:
-              raise SystemExit('versionCode exceeds limit')
+              raise SystemExit('versionCode exceeds Android limit')
           with open(os.environ['GITHUB_ENV'],'a') as f:
               f.write(f'POS7_VERSION_CODE={code}\n')
           PY2
@@ -143,7 +146,7 @@ jobs:
           echo "POS7_KEYSTORE_PATH=$RUNNER_TEMP/pos7-release.jks" >> "$GITHUB_ENV"
           echo "POS7_SIGNING_CERT_SHA256=$actual" >> "$GITHUB_ENV"
 
-      - name: Build signed APK
+      - name: Build signed tablet APK
         working-directory: android-project/POS7_Tablet
         env:
           POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
@@ -151,22 +154,22 @@ jobs:
           POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
         run: gradle --no-daemon clean assembleRelease
 
-      - name: Verify APK signature
+      - name: Verify final APK
         run: |
           set -euo pipefail
           apk=android-project/POS7_Tablet/app/build/outputs/apk/release/app-release.apk
           sdk="$ANDROID_HOME/build-tools/35.0.0"
           "$sdk/apksigner" verify --verbose "$apk"
-          "$sdk/aapt" dump badging "$apk" | grep -F "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.230-save-p5'"
+          "$sdk/aapt" dump badging "$apk" | grep -F "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.231-save-p6'"
           actual=$("$sdk/apksigner" verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2}' | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')
           test "$actual" = "$POS7_SIGNING_CERT_SHA256"
           mkdir -p output
-          cp "$apk" output/POS7_Tablet_SAVE_P5.apk
+          cp "$apk" output/POS7_Tablet_SAVE_P6.apk
           sha256sum output/*.apk > output/SHA256SUMS.txt
 
       - uses: actions/upload-artifact@v4
         with:
-          name: POS7-Tablet-SAVE-P5-${{ env.POS7_VERSION_CODE }}
+          name: POS7-Tablet-SAVE-P6-${{ env.POS7_VERSION_CODE }}
           path: output/
           if-no-files-found: error
 
