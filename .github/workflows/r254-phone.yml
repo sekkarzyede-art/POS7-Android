@@ -1,12 +1,12 @@
 
-name: POS7 R254 Photo Switch Display Fix Phone APK
+name: POS7 R254 Safe Logout After Inventory Batch Phone APK
 
 on:
   push:
     branches: [main]
     paths:
-      - '.github/workflows/r254-phone-photo-switch-fix.yml'
-      - 'POS7_R254_PHONE_PHOTO_SWITCH_FIX_SOURCE.zip'
+      - '.github/workflows/r254-phone-safe-logout.yml'
+      - 'POS7_R254_PHONE_LOGOUT_BATCH_GUARD_SOURCE.zip'
   workflow_dispatch:
     inputs:
       installed_phone_code:
@@ -15,7 +15,7 @@ on:
         default: ''
         type: string
       installed_tablet_code:
-        description: 'Optional currently installed tablet versionCode'
+        description: 'Unused for phone-only build'
         required: false
         default: ''
         type: string
@@ -36,7 +36,7 @@ jobs:
           - kind: Phone
             project: POS7_Owner_Phone
             package: com.sokkarzeyedeh.pos7owner
-            version: 485.7.143-r254-photo-switch-display-fix
+            version: 485.7.143-r254-logout-batch-guard
 
     steps:
       - name: Checkout
@@ -57,7 +57,8 @@ jobs:
         uses: android-actions/setup-android@v4
 
       - name: Install SDK 35
-        run: sdkmanager --install 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
+        run: |
+          sdkmanager --install 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
 
       - name: Extract and validate source
         env:
@@ -70,12 +71,11 @@ jobs:
           import zipfile, os
           from pathlib import Path
 
-          src = Path('POS7_R254_PHONE_PHOTO_SWITCH_FIX_SOURCE.zip')
+          src = Path('POS7_R254_PHONE_LOGOUT_BATCH_GUARD_SOURCE.zip')
           if not src.is_file():
               raise SystemExit('Missing source ZIP at repository root')
 
           dest = Path('android-project').resolve()
-
           with zipfile.ZipFile(src) as z:
               for item in z.infolist():
                   if not (dest / item.filename).resolve().is_relative_to(dest):
@@ -99,7 +99,7 @@ jobs:
           assert 'photoCheck' in html
           assert (app / 'app/src/main/java').exists()
 
-          print('Source verified successfully')
+          print('R254 source verified')
           PY
 
       - name: Check JavaScript
@@ -152,26 +152,18 @@ jobs:
 
       - name: Determine upgrade-safe versionCode
         env:
-          KIND: ${{ matrix.kind }}
           INSTALLED_PHONE: ${{ inputs.installed_phone_code }}
-          INSTALLED_TABLET: ${{ inputs.installed_tablet_code }}
         run: |
           python3 - <<'PY'
           import os
 
-          raw = (
-              os.getenv('INSTALLED_PHONE')
-              if os.getenv('KIND') == 'Phone'
-              else os.getenv('INSTALLED_TABLET')
-          ) or ''
-
-          raw = raw.strip()
+          raw = os.getenv('INSTALLED_PHONE', '').strip()
 
           if raw and not (raw.isascii() and raw.isdecimal()):
               raise SystemExit('Invalid installed versionCode')
 
           code = max(
-              2000008000 + int(os.environ['GITHUB_RUN_NUMBER']),
+              2000009000 + int(os.environ['GITHUB_RUN_NUMBER']),
               int(raw) + 1 if raw else 0
           )
 
@@ -185,7 +177,6 @@ jobs:
           PY
 
       - name: Restore original Firebase
-        if: matrix.kind == 'Phone'
         env:
           POS7_FIREBASE_JSON_BASE64: ${{ secrets.POS7_FIREBASE_JSON_BASE64 }}
         run: |
@@ -283,12 +274,11 @@ jobs:
             tr '[:upper:]' '[:lower:]')
 
           test "$actual" = "$POS7_SIGNING_CERT_SHA256" || {
-            echo 'Unexpected APK signing certificate'
+            echo 'APK signing certificate mismatch'
             exit 1
           }
 
           mkdir -p output
-
           cp "$apk" "output/POS7_${KIND}_R254.apk"
 
           sha256sum output/*.apk > output/SHA256SUMS.txt
@@ -297,10 +287,10 @@ jobs:
             "$PACKAGE" "$VERSION" "$POS7_VERSION_CODE" "$actual" \
             > output/build-info.txt
 
-      - name: Upload APK
+      - name: Upload signed APK
         uses: actions/upload-artifact@v4
         with:
-          name: POS7-${{ matrix.kind }}-R254-Photo-Switch-Fix-${{ env.POS7_VERSION_CODE }}
+          name: POS7-Phone-R254-Safe-Logout-${{ env.POS7_VERSION_CODE }}
           path: output/
           if-no-files-found: error
           retention-days: 30
