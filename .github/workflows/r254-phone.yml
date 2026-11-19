@@ -1,9 +1,9 @@
 
-name: POS7 R254 Phone Signed APK
+name: POS7 R254 Phone Logout Fix Signed APK
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/r254-phone.yml']
+    paths: ['.github/workflows/r254-phone-logout-fix.yml']
   workflow_dispatch:
     inputs:
       installed_phone_code:
@@ -30,7 +30,7 @@ jobs:
           - kind: Phone
             project: POS7_Owner_Phone
             package: com.sokkarzeyedeh.pos7owner
-            version: 485.7.143-r254-ms2-unified
+            version: 485.7.143-r254-logout-fix
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -57,8 +57,8 @@ jobs:
           python3 - <<'PY'
           import zipfile,os
           from pathlib import Path
-          src=Path('POS7_R254_Two_APK_Source_Projects(3).zip')
-          if not src.is_file(): raise SystemExit('Missing POS7_R254_Two_APK_Source_Projects(3).zip at repository root')
+          src=Path('POS7_R254_PHONE_LOGOUT_FIX_ANDROID_SOURCE.zip')
+          if not src.is_file(): raise SystemExit('Missing POS7_R254_PHONE_LOGOUT_FIX_ANDROID_SOURCE.zip at repository root')
           dest=Path('android-project').resolve()
           with zipfile.ZipFile(src) as z:
             for info in z.infolist():
@@ -108,7 +108,7 @@ jobs:
           raw=(os.getenv('INSTALLED_PHONE') if os.getenv('KIND')=='Phone' else os.getenv('INSTALLED_TABLET')) or ''
           raw=raw.strip()
           if raw and not (raw.isascii() and raw.isdecimal()): raise SystemExit('Installed code must be decimal digits')
-          value=max(2000000000+int(os.environ['GITHUB_RUN_NUMBER']),int(raw)+1 if raw else 0)
+          value=max(2000001000+int(os.environ['GITHUB_RUN_NUMBER']),int(raw)+1 if raw else 0)
           if value>2100000000: raise SystemExit('versionCode too high')
           with open(os.environ['GITHUB_ENV'],'a') as fp:fp.write('POS7_VERSION_CODE='+str(value)+'\n')
           print('New versionCode:',value)
