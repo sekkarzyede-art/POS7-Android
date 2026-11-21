@@ -24,6 +24,13 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 15
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify original POS7 report-builder sections exporter
+        run: |
+          node --check pos7-release-audit/r302/backup_sections_export.js
+          node pos7-release-audit/r302/backup_sections_export.test.cjs
       - name: Exercise backup-authoritative rotation on disposable PostgreSQL (NO production)
         env:
           PGPASSWORD: r302-only-scratch
