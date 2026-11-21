@@ -40,7 +40,7 @@ document.addEventListener('submit',function(e){e.preventDefault();e.stopImmediat
 for branch in ('tab1_R213','tab2_R215'):
  target=app/'app/src/main/assets'/('pos7_'+branch+'.html')
  html=target.read_text()
- assert html.count('</body>')==1
- target.write_text(html.replace('</body>',warning+'</body>',1))
+ # Many inline receipt templates contain literal </body>; append after original document instead.
+ target.write_text(html+'\n'+warning)
 
 print('R301 stand-alone TEST package verified. Cannot update or replace production POS7 APK.')
