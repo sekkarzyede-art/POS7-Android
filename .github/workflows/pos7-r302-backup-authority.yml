@@ -1,0 +1,42 @@
+name: POS7 R302 Backup-Authoritative A-B-A Cutover Tests (ISOLATED)
+on:
+  push:
+    branches: [pos7-r285-audit-only]
+    paths:
+      - 'pos7-release-audit/r302/**'
+      - '.github/workflows/pos7-r302-backup-authority.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  isolated-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: r302-only-scratch
+          POSTGRES_DB: pos7_r302_scratch
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d pos7_r302_scratch"
+          --health-interval 5s --health-timeout 5s --health-retries 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exercise backup-authoritative rotation on disposable PostgreSQL (NO production)
+        env:
+          PGPASSWORD: r302-only-scratch
+        run: |
+          set -euo pipefail
+          psql -h localhost -U postgres -d pos7_r302_scratch -v ON_ERROR_STOP=1 -f pos7-release-audit/r302/test_backup_authority.sql > /tmp/r302.log 2>&1 || { cat /tmp/r302.log; exit 1; }
+          cat /tmp/r302.log
+          grep -q 'PASS backup replaces DIFFERENT cloud data' /tmp/r302.log
+          grep -q 'PASS B to A return with a newly restored backup' /tmp/r302.log
+          grep -q 'PASS missing gate leaves original state unchanged' /tmp/r302.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: POS7-R302-SCRATCH-BACKUP-AUTHORITY-TEST-LOG
+          path: /tmp/r302.log
+          if-no-files-found: warn
