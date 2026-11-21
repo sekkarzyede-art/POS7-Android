@@ -48,11 +48,11 @@ BEGIN
  END LOOP;
  IF (SELECT count(*) FROM jsonb_object_keys(c.replacement_sections))<>14 THEN
   RAISE EXCEPTION 'unexpected_backup_sections';END IF;
+ SELECT * INTO g FROM public.pos7_inventory_gate_r152 WHERE store_id=c.store_id FOR UPDATE;
+ IF NOT FOUND THEN RAISE EXCEPTION 'inventory_gate_missing';END IF;
  SELECT * INTO s FROM public.pos7_owner_snapshot WHERE store_id=c.store_id FOR UPDATE;
  IF NOT FOUND OR s.revision IS DISTINCT FROM c.expected_cloud_revision
  OR s.revision>=9223372036854775806 THEN RAISE EXCEPTION 'cloud_revision_changed_retry';END IF;
- SELECT * INTO g FROM public.pos7_inventory_gate_r152 WHERE store_id=c.store_id FOR UPDATE;
- IF NOT FOUND THEN RAISE EXCEPTION 'inventory_gate_missing';END IF;
  INSERT INTO pos7_handoff_private.rotation_state(store_id,epoch) VALUES(c.store_id,0)
  ON CONFLICT DO NOTHING;
  SELECT epoch INTO old_epoch FROM pos7_handoff_private.rotation_state WHERE store_id=c.store_id FOR UPDATE;
