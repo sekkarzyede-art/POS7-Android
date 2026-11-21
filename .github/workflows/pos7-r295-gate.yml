@@ -43,7 +43,10 @@ jobs:
           set -euo pipefail
           psql -h localhost -U postgres -d pos7_r293 -v ON_ERROR_STOP=1 -f pos7-release-audit/r293/postgres_integration.sql > /tmp/r293.log 2>&1 || { tail -100 /tmp/r293.log; exit 1; }
           createdb -h localhost -U postgres pos7_r294
-          psql -h localhost -U postgres -d pos7_r294 -v ON_ERROR_STOP=1 -f pos7-release-audit/r294/legacy_rebind_regression.sql > /tmp/r294.log 2>&1 || { tail -100 /tmp/r294.log; exit 1; }
+          # Database roles are shared across DBs in the same PostgreSQL cluster.
+          # R293 already creates anon/authenticated, so avoid duplicate CREATE ROLE in R294.
+          sed -e '/^CREATE ROLE anon NOLOGIN;$/d' -e '/^CREATE ROLE authenticated NOLOGIN;$/d' pos7-release-audit/r294/legacy_rebind_regression.sql > pos7-release-audit/r294/r294_ci.sql
+          psql -h localhost -U postgres -d pos7_r294 -v ON_ERROR_STOP=1 -f pos7-release-audit/r294/r294_ci.sql > /tmp/r294.log 2>&1 || { tail -100 /tmp/r294.log; exit 1; }
           grep -q 'PASS B->A return to original tablet' /tmp/r293.log
           grep -q 'PASS protected rotation keeps publisher and inventory aligned' /tmp/r294.log
       - name: Publish safe audit outputs (never an installable APK)
