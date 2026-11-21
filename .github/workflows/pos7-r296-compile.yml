@@ -1,0 +1,45 @@
+name: POS7 R296 Android Unified SOURCE Compile (DO NOT INSTALL)
+on:
+  push:
+    branches: [pos7-r285-audit-only]
+    paths:
+      - 'pos7-release-audit/r296/**'
+      - '.github/workflows/pos7-r296-compile.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  android-compile-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - uses: android-actions/setup-android@v4
+      - name: SDK
+        run: sdkmanager --install 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Merge original sources without starting business code
+        run: python3 pos7-release-audit/r296/make_unified_compile_candidate.py
+      - name: Compile Java and Android without signing or creating APK
+        working-directory: r296-android/tab1/POS7_Tablet
+        run: gradle --no-daemon :app:compileDebugJavaWithJavac
+      - name: Produce source manifest only
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,pathlib
+          p=pathlib.Path('r296-android/tab1/POS7_Tablet')
+          files=['app/src/main/assets/index.html','app/src/main/assets/pos7_tab1_R213.html','app/src/main/assets/pos7_tab2_R215.html','app/src/main/java/com/sokkarzeyedeh/pos7/MainActivity.java','app/src/main/java/com/sokkarzeyedeh/pos7/NativeBranchBridge.java']
+          output={'status':'COMPILE_ONLY_NOT_INSTALLABLE','production_release_authorized':False,'sources':{k:hashlib.sha256((p/k).read_bytes()).hexdigest() for k in files},'blockers':['real device enrollment','cloud data restore','server atomic rotation','legacy writer protection','installed certificate/versionCode comparison']}
+          pathlib.Path('R296_ANDROID_BUILD_MANIFEST.json').write_text(json.dumps(output,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: POS7-R296-ANDROID-COMPILE-MANIFEST-NO-APK
+          path: R296_ANDROID_BUILD_MANIFEST.json
+          if-no-files-found: error
