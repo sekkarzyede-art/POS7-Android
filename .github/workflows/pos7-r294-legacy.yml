@@ -1,0 +1,44 @@
+name: POS7 R294 Legacy RPC Regression — Isolated
+on:
+  push:
+    branches: [pos7-r285-audit-only]
+    paths:
+      - 'pos7-release-audit/r294/**'
+      - '.github/workflows/pos7-r294-legacy.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  legacy-regression:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: test-only-no-production
+          POSTGRES_DB: pos7_r294_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d pos7_r294_test"
+          --health-interval 5s --health-timeout 5s --health-retries 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test production legacy behavior in synthetic isolated PostgreSQL
+        env:
+          PGPASSWORD: test-only-no-production
+        run: |
+          set -euo pipefail
+          psql -h localhost -U postgres -d pos7_r294_test -v ON_ERROR_STOP=1 -f pos7-release-audit/r294/legacy_rebind_regression.sql > /tmp/r294.log 2>&1 || { tail -100 /tmp/r294.log; exit 1; }
+          cat /tmp/r294.log
+          grep -q 'PASS detected legacy rebind' /tmp/r294.log
+          grep -q 'PASS legacy rebind privilege fenced' /tmp/r294.log
+          grep -q 'PASS protected rotation keeps publisher and inventory aligned' /tmp/r294.log
+      - name: Save verified test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: POS7-R294-ISOLATED-REGRESSION
+          path: /tmp/r294.log
+          if-no-files-found: warn
