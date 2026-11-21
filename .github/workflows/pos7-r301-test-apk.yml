@@ -1,0 +1,56 @@
+name: POS7 R301 Offline Restore Diagnostic APK (Separate App)
+on:
+  push:
+    branches: [pos7-r285-audit-only]
+    paths:
+      - 'pos7-release-audit/r301/**'
+      - '.github/workflows/pos7-r301-test-apk.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  stand-alone-test-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - uses: android-actions/setup-android@v4
+      - run: sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Build standalone recovery test from real R213 and R215
+        run: python3 pos7-release-audit/r301/build_test_apk.py
+      - name: Verify backup JSON preflight and rollback tests
+        run: |
+          node pos7-release-audit/r298/backup_preflight.test.cjs
+          node pos7-release-audit/r299/offline_restore.test.cjs
+      - name: Assemble debug signed test APK with separate package ID
+        working-directory: r296-android/tab1/POS7_Tablet
+        run: gradle --no-daemon :app:assembleDebug
+      - name: Validate APK must NEVER replace production POS7
+        run: |
+          set -euo pipefail
+          sdk="$ANDROID_HOME/build-tools/35.0.0"
+          apk=r296-android/tab1/POS7_Tablet/app/build/outputs/apk/debug/app-debug.apk
+          "$sdk/apksigner" verify --verbose "$apk"
+          "$sdk/aapt" dump badging "$apk" | grep -F "package: name='com.sokkarzeyedeh.pos7.recoverytest'"
+          if "$sdk/aapt" dump permissions "$apk" | grep -Fq 'android.permission.INTERNET'; then
+            echo 'UNSAFE: test APK still has INTERNET permission'; exit 1
+          fi
+          if "$sdk/aapt" dump badging "$apk" | grep -q "package: name='com.sokkarzeyedeh.pos7' "; then
+            echo 'UNSAFE: test APK would replace real POS7'; exit 1
+          fi
+          mkdir -p output
+          cp "$apk" output/POS7_R301_OFFLINE_RECOVERY_TEST.apk
+          sha256sum output/*.apk > output/SHA256SUMS.txt
+          printf '%s\n' 'R301 diagnostic backup restore only.' 'NO INTERNET permission.' 'Separate package ID; will NOT replace R213/R215.' 'This is NOT the unified publishing APK.' > output/READ_FIRST.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: POS7-R301-STANDALONE-OFFLINE-RECOVERY-TEST-APK
+          path: output/
+          if-no-files-found: error
