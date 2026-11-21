@@ -1,0 +1,70 @@
+name: POS7 R300 Signed Device Proof and Isolated Service Handoff
+on:
+  push:
+    branches: [pos7-r285-audit-only]
+    paths:
+      - 'pos7-release-audit/r300/**'
+      - '.github/workflows/pos7-r300-handoff.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  signed-handoff:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: pos7-r300-ci-only
+          POSTGRES_DB: pos7_r300_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d pos7_r300_test"
+          --health-interval 5s --health-timeout 5s --health-retries 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Verify 16 cryptographic checks
+        run: node pos7-release-audit/r300/test_verify_proof.mjs
+      - name: Sign native Java P-256 DER and verify with server WebCrypto
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/r300-java
+          javac -d /tmp/r300-java pos7-release-audit/r300/android/DeviceProofContractR300.java pos7-release-audit/r300/android/ProofInteroperabilityTestR300.java
+          java -cp /tmp/r300-java com.sokkarzeyedeh.pos7.ProofInteroperabilityTestR300 > /tmp/r300-java-proof.txt
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          import {verifyAndroidSignature} from './pos7-release-audit/r300/verify_proof.mjs';
+          const [spkiBase64,signatureBase64]=fs.readFileSync('/tmp/r300-java-proof.txt','utf8').trim().split('\n');
+          const params={branch:'tab1',project:'jdcolkgzwqpwbfvcrdje',device:'550e8400-e29b-41d4-a716-446655440000',challenge:'650e8400-e29b-41d4-a716-446655440000',nonce:'a'.repeat(64),revision:42,epoch:2,sectionsSha256:'b'.repeat(64),iat:1800000000,exp:1800000120};
+          if(!await verifyAndroidSignature({params,spkiBase64,signatureBase64,nowSeconds:1800000060})) throw Error('Java verifier incompatibility');
+          console.log('PASS Java Android-like DER signature verified by server WebCrypto');
+          JS
+      - name: Verify Edge TypeScript module parses
+        run: |
+          npm install --no-save --ignore-scripts typescript@5.9.3
+          npx tsc --noEmit --allowJs --checkJs false --module esnext --target es2022 --lib es2022,dom --moduleResolution bundler pos7-release-audit/r300/edge/index.ts
+      - name: Test live PostgreSQL service role + challenge receipt transaction on isolated database
+        env:
+          PGPASSWORD: pos7-r300-ci-only
+        run: |
+          set -euo pipefail
+          psql -h localhost -U postgres -d pos7_r300_test -v ON_ERROR_STOP=1 -f pos7-release-audit/r300/bootstrap.sql > /tmp/r300-pg.log 2>&1 || { tail -120 /tmp/r300-pg.log; exit 1; }
+          cat /tmp/r300-pg.log
+          grep -q 'PASS one-time challenge cannot finalize twice' /tmp/r300-pg.log
+      - name: Save isolated evidence; NO APK and no production deployment
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: POS7-R300-ISOLATED-PROOF-AND-DATABASE-EVIDENCE
+          path: /tmp/r300-pg.log
+          if-no-files-found: warn
