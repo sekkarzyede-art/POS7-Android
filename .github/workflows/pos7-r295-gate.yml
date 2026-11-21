@@ -1,0 +1,58 @@
+name: POS7 R295 Unified Pre-Release Gate (NO APK)
+on:
+  push:
+    branches: [pos7-r285-audit-only]
+    paths:
+      - 'pos7-release-audit/**'
+      - '.github/workflows/pos7-r295-gate.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  pre-release-gate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: pos7-ci-only
+          POSTGRES_DB: pos7_r293
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d pos7_r293"
+          --health-interval 5s --health-timeout 5s --health-retries 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Verify original R213 and R215 source archives
+        run: python3 pos7-release-audit/r285_pair_audit.py
+      - name: Test R290 device-challenge contract
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/pos7-r290
+          javac -d /tmp/pos7-r290 pos7-release-audit/r290/*.java
+          java -cp /tmp/pos7-r290 com.sokkarzeyedeh.pos7.DeviceChallengeContractTest
+      - name: Test R293 and R294 on separate disposable PostgreSQL DBs
+        env:
+          PGPASSWORD: pos7-ci-only
+        run: |
+          set -euo pipefail
+          psql -h localhost -U postgres -d pos7_r293 -v ON_ERROR_STOP=1 -f pos7-release-audit/r293/postgres_integration.sql > /tmp/r293.log 2>&1 || { tail -100 /tmp/r293.log; exit 1; }
+          createdb -h localhost -U postgres pos7_r294
+          psql -h localhost -U postgres -d pos7_r294 -v ON_ERROR_STOP=1 -f pos7-release-audit/r294/legacy_rebind_regression.sql > /tmp/r294.log 2>&1 || { tail -100 /tmp/r294.log; exit 1; }
+          grep -q 'PASS B->A return to original tablet' /tmp/r293.log
+          grep -q 'PASS protected rotation keeps publisher and inventory aligned' /tmp/r294.log
+      - name: Publish safe audit outputs (never an installable APK)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: POS7-R295-AUDIT-NO-APK
+          path: |
+            POS7_R285_AUDIT.json
+            /tmp/r293.log
+            /tmp/r294.log
+          if-no-files-found: warn
