@@ -1,0 +1,22 @@
+const assert=require('node:assert/strict'),crypto=require('node:crypto');
+globalThis.crypto=crypto.webcrypto;
+const api=require('./backup_sections_export.js');
+const required=['cash','cashLedger','customers','expenses','meta','payments','products','purchases','receipts','returns','sales','suppliers','wallet','walletTx'];
+const sections=Object.fromEntries(required.map(x=>[x,{}]));
+const storage={getItem:k=>k==='POS7_R299_OFFLINE_RESTORED'?JSON.stringify({branch:'tab1',offlineOnly:true,canPublish:false}):k==='POS7_TRIAL188_CLEAN'?JSON.stringify({sales:[{id:'SAL-1'}]}):null};
+const make=(opts={})=>api.build({storage,branch:'tab1',snapshotBuilder:async()=>({schema:1,sections}),...opts});
+(async()=>{
+ const r=await make();
+ assert.equal(r.canPublish,false);assert.equal(r.source,'local-backup');assert.deepEqual(r.sections,sections);
+ assert.match(r.localStateSha256,/^[0-9a-f]{64}$/);assert.match(r.sectionsSha256,/^[0-9a-f]{64}$/);
+ await assert.rejects(()=>make({branch:'tab2'}),/branch_or_mode/);
+ await assert.rejects(()=>make({storage:{getItem:()=>null}}),/no_confirmed/);
+ await assert.rejects(()=>make({expectedLocalRestored:false}),/native_offline/);
+ await assert.rejects(()=>make({snapshotBuilder:null}),/builder_missing/);
+ await assert.rejects(()=>make({snapshotBuilder:async()=>({schema:2,sections})}),/snapshot_schema/);
+ await assert.rejects(()=>make({snapshotBuilder:async()=>({schema:1,sections:{...sections,extra:{}}})}),/section_count/);
+ await assert.rejects(()=>make({snapshotBuilder:async()=>({schema:1,sections:{...sections,sales:[]}})}),/invalid_section_sales/);
+ const copied={...sections};delete copied.cash;
+ await assert.rejects(()=>make({snapshotBuilder:async()=>({schema:1,sections:copied})}),/section_count/);
+ console.log('PASS R302 10 local-section export checks; no permission to publish');
+})().catch(e=>{console.error(e);process.exit(1)});
