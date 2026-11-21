@@ -24,3 +24,12 @@ jobs:
           name: POS7-R285-READONLY-AUDIT
           path: POS7_R285_AUDIT.json
           if-no-files-found: warn
+      - name: Export original R213 and R215 sources for isolated local merge
+        uses: actions/upload-artifact@v4
+        with:
+          name: POS7-R285-ORIGINAL-SOURCE-PAIR
+          path: |
+            POS7_Tablet_v485.7.229_R213_Project.zip
+            POS7_المتجر_الثاني_TAB_R215_Android_Source.zip
+          if-no-files-found: error
+          retention-days: 3
