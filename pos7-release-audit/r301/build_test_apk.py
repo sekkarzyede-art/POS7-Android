@@ -21,4 +21,26 @@ java=app/'app/src/main/java/com/sokkarzeyedeh/pos7/MainActivity.java'
 assert 'settings.setBlockNetworkLoads(true);' in java.read_text()
 assert 'android.permission.INTERNET' not in m
 assert "applicationId 'com.sokkarzeyedeh.pos7.recoverytest'" in g
+
+# R301 safety: persistent warning and read-only business screens.
+# Prevent accidental local invoices/stock changes in a diagnostic application.
+warning = """<style id="pos7-diagnostic-only">
+#pos7-diagnostic-banner{position:fixed!important;top:0!important;right:0!important;
+left:0!important;z-index:2147483647!important;background:#b42318!important;
+color:white!important;font:700 18px Tahoma,sans-serif!important;text-align:center!important;
+padding:12px 4px!important;pointer-events:none!important}
+</style><div id="pos7-diagnostic-banner" dir="rtl">نسخة فحص تجريبية — دون إنترنت — يُمنع استخدامها للبيع أو الشراء</div>
+<script>
+document.addEventListener('click',function(e){
+ const el=e.target&&e.target.closest&&e.target.closest('button,input,select,textarea,a,[onclick],[role=button]');
+ if(el){e.preventDefault();e.stopImmediatePropagation();}
+},true);
+document.addEventListener('submit',function(e){e.preventDefault();e.stopImmediatePropagation();},true);
+</script>"""
+for branch in ('tab1_R213','tab2_R215'):
+ target=app/'app/src/main/assets'/('pos7_'+branch+'.html')
+ html=target.read_text()
+ assert html.count('</body>')==1
+ target.write_text(html.replace('</body>',warning+'</body>',1))
+
 print('R301 stand-alone TEST package verified. Cannot update or replace production POS7 APK.')
