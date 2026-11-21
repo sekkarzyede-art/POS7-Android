@@ -1,0 +1,74 @@
+name: POS7 R298 Legacy Backup Import Preflight (STAGING ONLY)
+on:
+  push:
+    branches: [pos7-r285-audit-only]
+    paths:
+      - 'pos7-release-audit/r298/**'
+      - '.github/workflows/pos7-r298-backup.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  backup-preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test actual legacy POS7 JSON format and never-authorize guards
+        run: node pos7-release-audit/r298/backup_preflight.test.cjs
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - uses: android-actions/setup-android@v4
+      - run: sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Assemble original R213 and R215 source plus backup preflight gate
+        run: python3 pos7-release-audit/r298/build_backup_preflight_candidate.py
+      - name: Syntax check browser backup validator and entry HTML
+        run: |
+          node --check pos7-release-audit/r298/backup_preflight.js
+          python3 - <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+          import subprocess
+          class Parser(HTMLParser):
+            def __init__(self):super().__init__();self.in_script=False;self.blocks=[]
+            def handle_starttag(self,tag,attrs):
+              if tag=='script':self.in_script=True;self.blocks.append('')
+            def handle_endtag(self,tag):
+              if tag=='script':self.in_script=False
+            def handle_data(self,data):
+              if self.in_script:self.blocks[-1]+=data
+          p=Parser()
+          p.feed(Path('r296-android/tab1/POS7_Tablet/app/src/main/assets/index.html').read_text())
+          for block in p.blocks:
+            if block.strip():
+              r=subprocess.run(['node','--check'],input=block,text=True,capture_output=True)
+              if r.returncode:raise SystemExit(r.stderr)
+          print('PASS inline browser JS syntax')
+          PY
+      - name: Compile Android project without APK or signing
+        working-directory: r296-android/tab1/POS7_Tablet
+        run: gradle --no-daemon :app:compileDebugJavaWithJavac
+      - name: Package compile-verified source only
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile,ZIP_DEFLATED
+          p=Path('r296-android/tab1/POS7_Tablet')
+          with ZipFile('POS7_R298_BACKUP_PREFLIGHT_SOURCE_ONLY.zip','w',ZIP_DEFLATED) as out:
+            for f in p.rglob('*'):
+              if f.is_file() and not set(f.relative_to(p).parts).intersection({'build','.gradle'}):
+                out.write(f,arcname='POS7_Tablet/'+f.relative_to(p).as_posix())
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: POS7-R298-BACKUP-PREFLIGHT-SOURCE-NO-APK
+          path: POS7_R298_BACKUP_PREFLIGHT_SOURCE_ONLY.zip
+          if-no-files-found: error
