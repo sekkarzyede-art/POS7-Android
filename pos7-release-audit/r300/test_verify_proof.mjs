@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import {generateKeyPairSync, createSign} from 'node:crypto';
+import {PROJECTS,challengePayload,verifyAndroidSignature,canonicalSha256,derP256ToRaw} from './verify_proof.mjs';
+let count=0;function test(name,fn){return Promise.resolve().then(fn).then(()=>{console.log('PASS '+(++count)+' '+name)})}
+const device='550e8400-e29b-41d4-a716-446655440000', challenge='650e8400-e29b-41d4-a716-446655440000';
+const sections={products:{a:{name:'one',stock:4}},sales:{s:{total:2}}};
+const digest=await canonicalSha256(sections);
+const p={branch:'tab1',project:PROJECTS.tab1,device,challenge,nonce:'a'.repeat(64),revision:42,epoch:2,sectionsSha256:digest,iat:1800000000,exp:1800000120};
+const pair=generateKeyPairSync('ec',{namedCurve:'prime256v1'}),other=generateKeyPairSync('ec',{namedCurve:'prime256v1'});
+const spkiBase64=pair.publicKey.export({format:'der',type:'spki'}).toString('base64');
+function sign(k,params){const s=createSign('SHA256');s.update(challengePayload(params));return s.sign(k).toString('base64');}
+const signatureBase64=sign(pair.privateKey,p);
+const verify=(params=p,spki=spkiBase64,sig=signatureBase64,now=1800000060)=>verifyAndroidSignature({params,spkiBase64:spki,signatureBase64:sig,nowSeconds:now});
+await test('valid P256 native-like DER signature',async()=>assert.equal(await verify(),true));
+await test('public key mismatch denied',async()=>assert.equal(await verify(p,other.publicKey.export({format:'der',type:'spki'}).toString('base64')),false));
+await test('changed target tablet denied',async()=>assert.equal(await verify({...p,device:'550e8400-e29b-41d4-a716-446655440001'}),false));
+await test('changed data digest denied',async()=>assert.equal(await verify({...p,sectionsSha256:'b'.repeat(64)}),false));
+await test('changed revision denied',async()=>assert.equal(await verify({...p,revision:43}),false));
+await test('changed epoch denied',async()=>assert.equal(await verify({...p,epoch:3}),false));
+await test('changed nonce denied',async()=>assert.equal(await verify({...p,nonce:'c'.repeat(64)}),false));
+await test('wrong branch/project denied',async()=>assert.rejects(verify({...p,branch:'tab2'}),/branch_project/));
+await test('expired challenge denied',async()=>assert.rejects(verify(p,spkiBase64,signatureBase64,p.exp),/expired/));
+await test('future-issued challenge denied',async()=>assert.rejects(verify(p,spkiBase64,signatureBase64,p.iat-100),/expired/));
+await test('key cannot sign arbitrary branch',async()=>assert.equal(await verify({...p,branch:'tab2',project:PROJECTS.tab2}),false));
+await test('modified signature denied',async()=>{const sig=Buffer.from(signatureBase64,'base64');sig[sig.length-1]^=1;try{assert.equal(await verify(p,spkiBase64,sig.toString('base64')),false)}catch(e){assert.match(e.message,/der_/);}});
+await test('invalid DER is denied',async()=>assert.throws(()=>derP256ToRaw(new Uint8Array([0x30,0])),/der_/));
+await test('digest stable for reordered keys',async()=>assert.equal(await canonicalSha256({sales:{s:{total:2}},products:{a:{stock:4,name:'one'}}}),digest));
+await test('digest detects changed stock',async()=>assert.notEqual(await canonicalSha256({sales:{s:{total:2}},products:{a:{stock:5,name:'one'}}}),digest));
+await test('unsafe JSON keys denied',async()=>assert.rejects(canonicalSha256(JSON.parse('{"__proto__":{"x":1}}')),/unsafe_json_key/));
+console.log('TOTAL '+count+' crypto/data proof tests');
