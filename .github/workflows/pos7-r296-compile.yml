@@ -29,17 +29,25 @@ jobs:
       - name: Compile Java and Android without signing or creating APK
         working-directory: r296-android/tab1/POS7_Tablet
         run: gradle --no-daemon :app:compileDebugJavaWithJavac
-      - name: Produce source manifest only
+      - name: Produce reproducible source package and manifest only
         run: |
           python3 - <<'PY'
-          import hashlib,json,pathlib
+          import hashlib,json,pathlib,zipfile
           p=pathlib.Path('r296-android/tab1/POS7_Tablet')
           files=['app/src/main/assets/index.html','app/src/main/assets/pos7_tab1_R213.html','app/src/main/assets/pos7_tab2_R215.html','app/src/main/java/com/sokkarzeyedeh/pos7/MainActivity.java','app/src/main/java/com/sokkarzeyedeh/pos7/NativeBranchBridge.java']
           output={'status':'COMPILE_ONLY_NOT_INSTALLABLE','production_release_authorized':False,'sources':{k:hashlib.sha256((p/k).read_bytes()).hexdigest() for k in files},'blockers':['real device enrollment','cloud data restore','server atomic rotation','legacy writer protection','installed certificate/versionCode comparison']}
           pathlib.Path('R296_ANDROID_BUILD_MANIFEST.json').write_text(json.dumps(output,indent=2))
+          excluded={'build','.gradle','.git'}
+          with zipfile.ZipFile('R296_UNIFIED_ANDROID_SOURCE_COMPILE_ONLY.zip','w',zipfile.ZIP_DEFLATED) as out:
+            for file in p.rglob('*'):
+              if file.is_file() and not set(file.relative_to(p).parts).intersection(excluded):
+                out.write(file,arcname='POS7_Tablet/'+file.relative_to(p).as_posix())
+          print('Packaged verified source, not APK')
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: POS7-R296-ANDROID-COMPILE-MANIFEST-NO-APK
-          path: R296_ANDROID_BUILD_MANIFEST.json
+          name: POS7-R296-ANDROID-VERIFIED-SOURCE-NO-APK
+          path: |
+            R296_ANDROID_BUILD_MANIFEST.json
+            R296_UNIFIED_ANDROID_SOURCE_COMPILE_ONLY.zip
           if-no-files-found: error
