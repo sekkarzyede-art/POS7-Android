@@ -1,0 +1,26 @@
+name: POS7 R285 Original Tablet Source Audit ONLY
+on:
+  push:
+    branches:
+      - pos7-r285-audit-only
+    paths:
+      - '.github/workflows/pos7-r285-audit.yml'
+      - 'pos7-release-audit/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify actual R213 and R215 archives and compare
+        run: python3 pos7-release-audit/r285_pair_audit.py
+      - name: Upload evidence JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: POS7-R285-READONLY-AUDIT
+          path: POS7_R285_AUDIT.json
+          if-no-files-found: warn
