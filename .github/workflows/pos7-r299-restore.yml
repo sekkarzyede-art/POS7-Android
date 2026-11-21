@@ -1,0 +1,78 @@
+name: POS7 R299 Offline Restore Integration (NO APK)
+on:
+  push:
+    branches: [pos7-r285-audit-only]
+    paths:
+      - 'pos7-release-audit/r299/**'
+      - '.github/workflows/pos7-r299-restore.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify POS7 legacy backup and offline rollback tests
+        run: |
+          node pos7-release-audit/r298/backup_preflight.test.cjs
+          node pos7-release-audit/r299/offline_restore.test.cjs
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - uses: android-actions/setup-android@v4
+      - run: sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Integrate original R213 R215 HTML and offline restore
+        run: python3 pos7-release-audit/r299/build_offline_restore_candidate.py
+      - name: Verify offline isolation and parse JS
+        run: |
+          set -euo pipefail
+          grep -F 'settings.setBlockNetworkLoads(true);' r296-android/tab1/POS7_Tablet/app/src/main/java/com/sokkarzeyedeh/pos7/MainActivity.java
+          grep -F 'canPublish(){return false;}' r296-android/tab1/POS7_Tablet/app/src/main/java/com/sokkarzeyedeh/pos7/NativeBranchBridge.java
+          node --check r296-android/tab1/POS7_Tablet/app/src/main/assets/offline_restore.js
+          python3 - <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+          import subprocess
+          class P(HTMLParser):
+            def __init__(self): super().__init__();self.ins=False;self.s=[]
+            def handle_starttag(self,tag,attrs):
+              if tag=='script': self.ins=True;self.s.append('')
+            def handle_endtag(self,tag):
+              if tag=='script': self.ins=False
+            def handle_data(self,d):
+              if self.ins: self.s[-1]+=d
+          p=P()
+          p.feed(Path('r296-android/tab1/POS7_Tablet/app/src/main/assets/index.html').read_text())
+          for s in p.s:
+            if s.strip():
+              r=subprocess.run(['node','--check'],input=s,text=True,capture_output=True)
+              if r.returncode:raise SystemExit(r.stderr)
+          PY
+      - name: Compile Android source, not an APK
+        working-directory: r296-android/tab1/POS7_Tablet
+        run: gradle --no-daemon :app:compileDebugJavaWithJavac
+      - name: Package offline-only source
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile,ZIP_DEFLATED
+          p=Path('r296-android/tab1/POS7_Tablet')
+          with ZipFile('POS7_R299_OFFLINE_RESTORE_ANDROID_SOURCE.zip','w',ZIP_DEFLATED) as z:
+            for f in p.rglob('*'):
+              if f.is_file() and not set(f.relative_to(p).parts).intersection({'build','.gradle'}):
+                z.write(f,arcname='POS7_Tablet/'+f.relative_to(p).as_posix())
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: POS7-R299-OFFLINE-RESTORE-SOURCE-NO-APK
+          path: POS7_R299_OFFLINE_RESTORE_ANDROID_SOURCE.zip
+          if-no-files-found: error
