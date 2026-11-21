@@ -1,0 +1,43 @@
+name: POS7 R293 Isolated PostgreSQL Handoff Tests
+on:
+  push:
+    branches: [pos7-r285-audit-only]
+    paths:
+      - 'pos7-release-audit/r293/**'
+      - '.github/workflows/pos7-r293-postgres.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  isolated-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: pos7-test-only
+          POSTGRES_DB: pos7_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d pos7_test"
+          --health-interval 5s --health-timeout 5s --health-retries 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test isolated database (no production access)
+        env:
+          PGPASSWORD: pos7-test-only
+        run: |
+          set -euo pipefail
+          psql -h localhost -U postgres -d pos7_test -v ON_ERROR_STOP=1 -f pos7-release-audit/r293/postgres_integration.sql > /tmp/pos7-r293-test.log 2>&1 || { tail -100 /tmp/pos7-r293-test.log; exit 1; }
+          cat /tmp/pos7-r293-test.log
+          grep -q 'PASS B->A return to original tablet' /tmp/pos7-r293-test.log
+          grep -q 'PASS missing inventory gate leaves publisher' /tmp/pos7-r293-test.log
+      - name: Export isolated test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: POS7-R293-POSTGRES-RESULT
+          path: /tmp/pos7-r293-test.log
+          if-no-files-found: warn
