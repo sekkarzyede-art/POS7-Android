@@ -32,7 +32,7 @@ function setup(){
   const store={getItem(k){return Object.hasOwn(obj,k)?obj[k]:null},
     setItem(k,v){if(quota&&k===BACKUPS_KEY)throw new Error('QuotaExceededError');obj[k]=String(v);if(k===DATA_KEY)mainWrites++},
     removeItem(k){delete obj[k]}};
-  const ctx={window:null,localStorage:store,document:{readyState:'loading',addEventListener(){}},
+  const ctx={window:null,localStorage:store,document:{readyState:'loading',addEventListener(){},getElementById(){return null}},
     confirm:()=>true,console,JSON,Date,Array,String,
     pos7R102SaveStateDirect:()=>{store.setItem(DATA_KEY,obj[DATA_KEY])}};
   ctx.window={Pos7Android:{saveBackupJson:(name,data)=>{nativeCalls.push({name,data})}},
