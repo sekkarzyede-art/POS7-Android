@@ -265,6 +265,15 @@ state=b.data;persist();toast('تمت استعادة النسخة؛ اعتمد ن
 })()||{"""
         if html.count(state_old)!=1:raise RuntimeError('R314: state read anchor changed')
         html=html.replace(state_old,state_new,1)
+        default_end="autoBarcodeCounter:1000000\n};"
+        if html.count(default_end)!=1:raise RuntimeError('R314: state default closure changed')
+        html=html.replace(default_end,default_end+"""
+window.POS7_BOOT_DIAG_R314.state.products=Array.isArray(state.products)?state.products.length:0;
+window.POS7_BOOT_DIAG_R314.state.sales=Array.isArray(state.sales)?state.sales.length:0;
+window.POS7_BOOT_DIAG_R314.state.purchases=Array.isArray(state.purchases)?state.purchases.length:0;
+window.POS7_BOOT_DIAG_R314.state.customers=state.customers?Object.keys(state.customers).length:0;
+window.POS7_BOOT_DIAG_R314.state.suppliers=state.suppliers?Object.keys(state.suppliers).length:0;
+""",1)
         # Measure pre-splash readiness and completion without changing its
         # 5s minimum, DOM readiness checks, timers or resize dispatch.
         finish_old="window.POS7_SPLASH_TIMING.hiddenAt=performance.now();"
