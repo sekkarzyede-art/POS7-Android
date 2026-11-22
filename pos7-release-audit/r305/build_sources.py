@@ -58,9 +58,61 @@ state=b.data;persist();toast('تمت استعادة النسخة؛ اعتمد ن
         assert 'POS7_RESTORE_PENDING_R305' in html
         assert 'pos7_inventory_commit_r155' in html
         assert 'POS7_R174_SMART_CAS_SERVER_VERIFIED' in html
+    if branch=='tab2':
+        # R307: coalesce only redundant home-dashboard renders inside
+        # synchronous invoice saves. Every durable localStorage write remains.
+        old_persist="""function persist(){
+  pos7R102SaveStateDirect();
+  renderHome();
+}"""
+        new_persist="""function persist(){
+  pos7R102SaveStateDirect();
+  if(!window.pos307MarkHomeDirty || !window.pos307MarkHomeDirty())renderHome();
+}"""
+        if html.count(old_persist)!=1:
+            raise RuntimeError('R307 safety stop: base persist did not match')
+        html=html.replace(old_persist,new_persist,1)
+        marker='<script id="pos185-invoice-save-diagnostics">'
+        if html.count(marker)!=1:
+            raise RuntimeError('R307 safety stop: diagnostics insertion point not unique')
+        add_script="""<script id="pos7-r307-invoice-home-coalesce">
+(function(){
+ 'use strict';
+ if(window.pos307HomeBatchInstalled)return;
+ let depth=0,dirty=false;
+ window.pos307MarkHomeDirty=function(){
+   if(!depth)return false;
+   dirty=true;
+   return true;
+ };
+ function wrap(name){
+   const prior=window[name];
+   if(typeof prior!=='function')throw Error('R307 missing '+name);
+   const guarded=function(){
+     depth++;
+     try{return prior.apply(this,arguments);}
+     finally{
+       depth--;
+       if(depth===0&&dirty){
+         dirty=false;
+         renderHome();
+       }
+     }
+   };
+   window[name]=guarded;
+   if(name==='saveSale')saveSale=guarded;
+   else savePurchase=guarded;
+ }
+ wrap('saveSale');
+ wrap('savePurchase');
+ window.pos307HomeBatchInstalled=true;
+})();
+</script>
+"""
+        html=html.replace(marker,add_script+marker,1)
     target.write_text(html)
     (assets/'restore_transfer.js').write_text(Path('pos7-release-audit/r305/restore_transfer.js').read_text())
     gradle=app/'app/build.gradle'
-    build_tag='r306' if branch=='tab2' else 'r305'
+    build_tag='r307' if branch=='tab2' else 'r305'
     gradle.write_text(re.sub(r"versionName\s+['\"][^'\"]+['\"]",f"versionName '485.7.229-{build_tag}-{branch}'",gradle.read_text(),count=1))
 print('Prepared both operational Android sources with restored-backup transfer entrypoint')
