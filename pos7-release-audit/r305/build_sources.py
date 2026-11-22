@@ -39,6 +39,25 @@ state=b.data;persist();toast('تمت استعادة النسخة؛ اعتمد ن
  }
 """)
     html+='\n<script src="restore_transfer.js"></script>\n'
+    if branch=='tab2':
+        # R306: preserve all R305 restore/transfer operations; only remove
+        # redundant diagnostic serialization and switch to lossless fast deflate.
+        old_deflate='window.pako.deflate(value);'
+        if html.count(old_deflate)!=1:
+            raise RuntimeError('R306: unexpected compression path')
+        html=html.replace(old_deflate,'window.pako.deflate(value,{level:1});',1)
+        lines=html.splitlines(keepends=True)
+        matches=[i for i,line in enumerate(lines) if 'var pos185Serialized=JSON.stringify(state);' in line]
+        if len(matches)!=1:
+            raise RuntimeError('R306: diagnostic-only duplicate stringify not unique')
+        i=matches[0]
+        if i==0 or i+1==len(lines) or 'var pos185SerializationStart=' not in lines[i-1] or 'if(pos185SerializationStart>=0)' not in lines[i+1]:
+            raise RuntimeError('R306: unrecognized diagnostic instrumentation')
+        del lines[i-1:i+2]
+        html=''.join(lines)
+        assert 'POS7_RESTORE_PENDING_R305' in html
+        assert 'pos7_inventory_commit_r155' in html
+        assert 'POS7_R174_SMART_CAS_SERVER_VERIFIED' in html
     target.write_text(html)
     (assets/'restore_transfer.js').write_text(Path('pos7-release-audit/r305/restore_transfer.js').read_text())
     gradle=app/'app/build.gradle'
