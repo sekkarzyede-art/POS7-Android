@@ -8,7 +8,7 @@ assert.equal(html.split(tag).length,2);
 const src=html.split(tag)[1].split('</script>')[0];
 assert.ok(src.includes('if(changed)try{persist()}catch(e){}'));
 assert.ok(!src.includes("state.suppliers[n]=sBal(n)});try{persist()"));
-assert.ok(html.includes('المتجر الثاني — قاعدة مستقلة • 485.7.229-r323-tab2'));
+assert.ok(html.includes('المتجر الثاني — قاعدة مستقلة • 485.7.229-r324-tab2'));
 assert.ok(html.includes('POS7_RESTORE_PENDING_R305'));
 assert.ok(html.includes('window.pos310Installed=true'));
 assert.ok(!html.includes('window.pos311SaleActive'));
