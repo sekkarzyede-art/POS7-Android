@@ -1,0 +1,41 @@
+name: POS7 phone store-switch FCM read-only audit
+on:
+  push:
+    paths:
+      - .github/workflows/pos7-fcm-readonly-audit.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect source archives without extracting or modifying them
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import zipfile,pathlib,re
+          candidates=sorted(pathlib.Path('.').glob('*Phone*zip'))+sorted(pathlib.Path('.').glob('*PHONE*zip'))
+          seen=set()
+          for arc in candidates:
+            if arc in seen:continue
+            seen.add(arc)
+            print('ARCHIVE',arc.name,'bytes',arc.stat().st_size)
+            try:
+              with zipfile.ZipFile(arc) as z:
+                targets=[p for p in z.namelist() if p.endswith(('Pos7MessagingService.java','MainActivity.java','index.html'))]
+                print('TARGETS',targets[:12])
+                for path in targets[:8]:
+                  raw=z.read(path)
+                  s=raw.decode('utf-8','replace')
+                  lines=s.splitlines()
+                  patterns=['setActiveProject','onNewToken','getToken(', 'pos7_owner_push_tokens','registerFcm','registerPush','firebase','POS7_MULTI_ACTIVE_PROJECT_V1','switchStore','switchAccount']
+                  matches=[i for i,line in enumerate(lines) if any(pattern.lower() in line.lower() for pattern in patterns)]
+                  print('FILE',path,'LINES',len(lines),'MATCH_COUNT',len(matches))
+                  for i in matches[:48]:
+                    snippet=lines[i][:220]
+                    snippet=re.sub(r'(https?://)[^\\s\\x27\\x22]+',r'\\1[redacted]',snippet)
+                    print(f'{i+1}: {snippet}')
+            except Exception as e:print('ERROR',type(e).__name__,str(e)[:200])
+          PY
