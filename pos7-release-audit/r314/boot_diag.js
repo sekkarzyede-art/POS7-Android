@@ -34,7 +34,14 @@ D.report=function(){
  inflateMs:round(D.compression.inflateMs),deflateMs:round(D.compression.deflateMs)},
  functions:f,longTasksCount:D.longTasks.length,
  longTasksTotalMs:round(D.longTasks.reduce(function(s,x){return s+x.durationMs},0)),
- longestTasks:long.slice(0,15),events:D.events.slice(),cloud:D.cloud,
+ longestTasks:long.slice(0,15),events:D.events.slice(),cloud:(function(){
+ var records=performance.getEntriesByType('resource')||[],numbers=[];
+ records.forEach(function(x){if(/\\.supabase\\.co|supabase\\.in/.test(String(x.name||''))){
+  numbers.push({startMs:round(x.startTime),durationMs:round(x.duration)});
+ }});
+ return {requestCount:numbers.length,totalResourceMs:round(numbers.reduce(function(a,x){return a+x.durationMs},0)),
+ recentRequests:numbers.slice(-15)};
+})(),
  notice:'fromNavigationToReportMs is NOT startup time; use splashHiddenMs. Network and delayed work may continue after splash.'
  };
 };
@@ -111,24 +118,8 @@ window.pos314HookFunctions=function(){
  else if(name==='pos7R102SaveStateDirect')pos7R102SaveStateDirect=wrapped;
  }catch(e){}
  });
- // Observe only start/finish of the existing asynchronous sync; do not modify
- // results, arguments, retries, or remote API calls.
- if(typeof window.sync==='function'&&!window.sync.__pos314Wrapped){
- var old=window.sync;
- var syncWrapped=function(){
- var start=performance.now();D.cloud.starts=(D.cloud.starts||0)+1;
- var result;
- try{result=old.apply(this,arguments)}
- catch(e){D.cloud.errors=(D.cloud.errors||0)+1;throw e}
- if(result&&typeof result.then==='function'){
- return result.then(function(v){D.cloud.lastFinishedMs=round(performance.now()-t0);D.cloud.lastDurationMs=round(performance.now()-start);return v},
- function(e){D.cloud.errors=(D.cloud.errors||0)+1;throw e});
- }
- D.cloud.lastDurationMs=round(performance.now()-start);return result;
- };
- syncWrapped.__pos314Wrapped=true;window.sync=syncWrapped;
- try{sync=syncWrapped}catch(e){}
- }
+ // Cloud requests remain untouched; report only passive resource timing.
+
 };
 function mount(){
  if(document.getElementById('pos314BootButton'))return;
