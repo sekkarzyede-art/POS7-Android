@@ -1,0 +1,41 @@
+name: Inspect POS7 Tablet1 storage source R321
+on:
+  push:
+    branches: [pos7-tab1-r321-quota-recovery]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read actual Tablet1 R213 Android source (no APK build)
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile,shutil,json
+          source='POS7_Tablet_v485.7.229_R213_Project.zip'
+          with zipfile.ZipFile(source) as z:
+              names=z.namelist()
+              html=[n for n in names if n.endswith('app/src/main/assets/index.html')]
+              gradle=[n for n in names if n.endswith('app/build.gradle')]
+              assert len(html)==1,(len(html),html[:10])
+              assert len(gradle)==1
+              Path('output').mkdir(exist_ok=True)
+              Path('output/tab1_index.html').write_bytes(z.read(html[0]))
+              Path('output/tab1_build.gradle').write_bytes(z.read(gradle[0]))
+              s=z.read(html[0]).decode('utf8')
+              print(json.dumps({'source_zip':source,'archive_html_path':html[0],'html_bytes':len(s.encode('utf8')),
+                   'localstore_compression':s.count('pos7-localstorage-compression-v1'),
+                   'backups':s.count('POS7_BACKUPS_V1'),
+                   'state_key':s.count('POS7_TRIAL188_CLEAN'),
+                   'R174':s.count('R174'),'R210':s.count('R210'),'R213':s.count('R213')},ensure_ascii=False))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: POS7-Tab1-R321-source-forensics
+          path: output/
+          retention-days: 10
+          if-no-files-found: error
