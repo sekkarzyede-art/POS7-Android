@@ -14,7 +14,7 @@ assert.ok(h.includes('if(window.pos310PurchaseActive?.())return false;'));
 assert.ok(h.includes('POS7_RESTORE_PENDING_R305'));
 assert.ok(h.includes('window.pos309HomeBatchActive=()=>depth>0;'));
 assert.ok(h.includes('window.pako.deflate(value,{level:1});'));
-assert.ok(h.includes('المتجر الثاني — قاعدة مستقلة • 485.7.229-r314-tab2'));
+assert.ok(h.includes('المتجر الثاني — قاعدة مستقلة • 485.7.229-r315-tab2'));
 
 function setup(mode='success'){
  let writes=0;
