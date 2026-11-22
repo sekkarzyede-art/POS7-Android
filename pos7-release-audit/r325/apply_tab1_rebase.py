@@ -23,8 +23,9 @@ assert "pos7_restore_same_device_status_r325" in js
 assert "pos7_owner_rebind_device" not in js
 assert "pos7_owner_ack" not in js
 assert "POS7_TRANSFER_COMPLETED_R305" not in js
-# Named script injected AFTER existing main state and p57 owner client.
-h+='\\n<script id="pos7-r325-safe-sync">\\n'+js+'\\n</script>\\n'
+# External JS asset avoids HTMLParser inline-script token confusion.
+(assets/'r325_safe_rebase.js').write_text(js,encoding='utf8')
+h+='\\n<script id="pos7-r325-safe-sync" src="r325_safe_rebase.js"></script>\\n'
 g=g.replace("versionName '485.7.229-r322-tab1'","versionName '485.7.229-r325-tab1'",1)
 hfile.write_text(h,encoding='utf8')
 gfile.write_text(g,encoding='utf8')
