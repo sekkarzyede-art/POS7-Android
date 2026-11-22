@@ -246,7 +246,46 @@ state=b.data;persist();toast('تمت استعادة النسخة؛ اعتمد ن
         assert html.count('id="pos7-r310-purchase-single-commit"')==1
         assert 'POS7_RESTORE_PENDING_R305' in html
         assert 'window.pos309HomeBatchActive' in html
-    build_tag='r312' if branch=='tab2' else 'r305'
+    if branch=='tab2':
+        # R314 diagnostic only: do not carry over R313 compression changes.
+        # Initial timing bootstrap executes before the app's parser scripts.
+        boot=Path('pos7-release-audit/r314/boot_diag.js').read_text()
+        if html.count('<head>')!=1:raise RuntimeError('R314: unique document head not found')
+        html=html.replace('<head>','<head><script id="pos7-r314-boot-profiler">'+boot+'</script>',1)
+        load_start="<script>\nconst KEY='POS7_TRIAL188_CLEAN';"
+        if html.count(load_start)!=1:raise RuntimeError('R314: state initialization anchor changed')
+        html=html.replace(load_start,"<script id='pos7-r314-storage-hook'>window.pos314HookStorage();window.POS7_BOOT_DIAG_R314.mark('mainStateScriptStart');</script>\n"+load_start,1)
+        state_old="let state=JSON.parse(localStorage.getItem(KEY)||'null')||{"
+        state_new="""let state=(function(){
+ var t=performance.now(),raw=localStorage.getItem(KEY);
+ window.POS7_BOOT_DIAG_R314.state.originalCharacters=raw?raw.length:0;
+ try{return JSON.parse(raw||'null')}
+ finally{window.POS7_BOOT_DIAG_R314.state.loadAndParseMs=Math.round((performance.now()-t)*10)/10;
+ window.POS7_BOOT_DIAG_R314.mark('stateParsed')}
+})()||{"""
+        if html.count(state_old)!=1:raise RuntimeError('R314: state read anchor changed')
+        html=html.replace(state_old,state_new,1)
+        # Measure pre-splash readiness and completion without changing its
+        # 5s minimum, DOM readiness checks, timers or resize dispatch.
+        finish_old="window.POS7_SPLASH_TIMING.hiddenAt=performance.now();"
+        finish_new=finish_old+"window.POS7_BOOT_DIAG_R314.mark('splashHidden');"
+        if html.count(finish_old)!=1:raise RuntimeError('R314: splash finish anchor missing')
+        html=html.replace(finish_old,finish_new,1)
+        ready_old="ready=true;window.POS7_SPLASH_TIMING.uiReadyAt=performance.now();finish();"
+        ready_new="ready=true;window.POS7_SPLASH_TIMING.uiReadyAt=performance.now();window.POS7_BOOT_DIAG_R314.mark('uiReady');finish();"
+        if html.count(ready_old)!=1:raise RuntimeError('R314: splash UI ready anchor missing')
+        html=html.replace(ready_old,ready_new,1)
+        end="<script src=\\"restore_transfer.js\\"></script>"
+        if html.count(end)!=1:raise RuntimeError('R314: restore transfer script anchor missing')
+        html=html.replace(end,"<script id='pos7-r314-functions-hook'>window.pos314HookFunctions();window.POS7_BOOT_DIAG_R314.mark('scriptsRegistered');</script>\n"+end,1)
+        # Diagnostics are only aggregate counts and durations; don't save
+        # snapshots, invoice details, personal data or cloud credentials.
+        assert html.count('id="pos7-r314-boot-profiler"')==1
+        assert 'window.pako.deflate(value,{level:1});' in html
+        assert 'for(var i=0;i<storage.length;i++)keys.push(storage.key(i))' in html
+        assert 'window.pos310Installed=true' in html
+        assert 'window.pos311SaleActive' not in html
+    build_tag='r314' if branch=='tab2' else 'r305'
     if branch=='tab2':
         # R308: the on-screen version is generated from the SAME build tag
         # used for Android versionName, instead of the old R215 text.
