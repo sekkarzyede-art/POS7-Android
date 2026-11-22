@@ -246,7 +246,65 @@ state=b.data;persist();toast('تمت استعادة النسخة؛ اعتمد ن
         assert html.count('id="pos7-r310-purchase-single-commit"')==1
         assert 'POS7_RESTORE_PENDING_R305' in html
         assert 'window.pos309HomeBatchActive' in html
-    build_tag='r312' if branch=='tab2' else 'r305'
+    if branch=='tab2':
+        # R313: remove ONLY the eager full-localStorage compression migration
+        # executed in the parser before DOMContentLoaded. All getters, setters,
+        # compression and emergency on-quota migration remain in place.
+        migrate="// Migrate existing oversized JSON values without changing their logical keys or data."
+        if html.count(migrate)!=1:raise RuntimeError('R313: storage migration comment missing')
+        migration=re.search(r"// Migrate existing oversized JSON values without changing their logical keys or data\.\ntry\{var storage=window\.localStorage,keys=\[\];.*?\}catch\(e\)\{console\.warn\('POS7 storage compression migration deferred',e\)\}",html)
+        if not migration:raise RuntimeError('R313: storage migration body changed')
+        html=html[:migration.start()]+"""// R313: no eager full-storage migration at startup.
+ // Existing uncompressed JSON remains readable and will compress on its next
+ // write; quota-recovery still compresses old values on demand.
+ window.POS7_BOOT_R313 && (window.POS7_BOOT_R313.eagerMigrationSkipped=true);"""+html[migration.end():]
+        mark='<script id="pos7-localstorage-compression-v1">'
+        if html.count(mark)!=1:raise RuntimeError('R313: compression script not unique')
+        diag="""<script id="pos7-r313-startup-timing">
+(function(){
+ 'use strict';
+ var boot={start:performance.now(),eagerMigrationSkipped:false,
+           stateLoadMs:0,stateReadyAt:null,domReadyAt:null,splashHiddenAt:null};
+ window.POS7_BOOT_R313=boot;
+ document.addEventListener('DOMContentLoaded',function(){
+   boot.domReadyAt=performance.now();
+   boot.domReadyMs=Math.round(boot.domReadyAt-boot.start);
+ },{once:true});
+ window.addEventListener('load',function(){
+   boot.loadEventMs=Math.round(performance.now()-boot.start);
+ },{once:true});
+})();
+</script>
+"""
+        html=html.replace(mark,diag+mark,1)
+        source="let state=JSON.parse(localStorage.getItem(KEY)||'null')||{"
+        if html.count(source)!=1:raise RuntimeError('R313: initial-state load changed')
+        timed="""let state=(function(){
+ var t=performance.now();
+ try{return JSON.parse(localStorage.getItem(KEY)||'null')}
+ finally{
+  if(window.POS7_BOOT_R313){
+   window.POS7_BOOT_R313.stateLoadMs=Math.round(performance.now()-t);
+   window.POS7_BOOT_R313.stateReadyAt=performance.now();
+  }
+ }
+})()||{"""
+        html=html.replace(source,timed,1)
+        splash='window.POS7_SPLASH_TIMING.hiddenAt=performance.now();'
+        if html.count(splash)!=1:raise RuntimeError('R313: splash timing anchor changed')
+        html=html.replace(splash,splash+"""
+  if(window.POS7_BOOT_R313){
+   var info=window.POS7_BOOT_R313;
+   info.splashHiddenAt=performance.now();
+   info.splashMs=Math.round(info.splashHiddenAt-info.start);
+   console.info('POS7 R313 startup timing',JSON.stringify(info));
+  }""",1)
+        if 'for(var i=0;i<storage.length;i++)keys.push(storage.key(i))' in html:
+            raise RuntimeError('R313: old startup migration remains')
+        if 'var otherKey=this.key(i)' not in html:
+            raise RuntimeError('R313: on-demand quota rescue was removed')
+        assert html.count('id="pos7-r313-startup-timing"')==1
+    build_tag='r313' if branch=='tab2' else 'r305'
     if branch=='tab2':
         # R308: the on-screen version is generated from the SAME build tag
         # used for Android versionName, instead of the old R215 text.
