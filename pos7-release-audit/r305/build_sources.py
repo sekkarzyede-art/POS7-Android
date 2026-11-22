@@ -168,6 +168,7 @@ state=b.data;persist();toast('تمت استعادة النسخة؛ اعتمد ن
  let active=false,committing=false,deferred=0;
  window.pos310PurchaseActive=()=>active;
  window.pos310DeferSave=function(){
+   if(window.pos311SaleActive?.())return window.pos311DeferSaleSave();
    if(!active||committing)return false;
    deferred++;
    return true;
@@ -246,7 +247,129 @@ state=b.data;persist();toast('تمت استعادة النسخة؛ اعتمد ن
         assert html.count('id="pos7-r310-purchase-single-commit"')==1
         assert 'POS7_RESTORE_PENDING_R305' in html
         assert 'window.pos309HomeBatchActive' in html
-    build_tag='r310' if branch=='tab2' else 'r305'
+    if branch=='tab2':
+        # R311 pilot: single durable commit for new SALE invoices. Leave
+        # purchase R310 intact and preserve the R309 legacy path on edits.
+        sale_journal="post({sourceType:'sale',sourceId:inv.id,reference:inv.number,description:'فاتورة بيع '+(inv.number||''),date:inv.date,lines:saleLines(inv)});localStorage.setItem(KEY,JSON.stringify(state))"
+        sale_journal_new="post({sourceType:'sale',sourceId:inv.id,reference:inv.number,description:'فاتورة بيع '+(inv.number||''),date:inv.date,lines:saleLines(inv)});(window.pos311SaleActive?.()?pos7R102SaveStateDirect():localStorage.setItem(KEY,JSON.stringify(state)))"
+        if html.count(sale_journal)!=1:
+            raise RuntimeError('R311 safety stop: sale journal write changed')
+        html=html.replace(sale_journal,sale_journal_new,1)
+        sync_guard="if(window.pos310PurchaseActive?.())return false;"
+        if html.count(sync_guard)!=1:raise RuntimeError('R311: purchase cloud guard not unique')
+        html=html.replace(sync_guard,sync_guard+"\n if(window.pos311SaleActive?.())return false;",1)
+        # Suppress the original early success toast while sale is uncommitted;
+        # it is emitted only after the final storage write has succeeded.
+        early="toast('تم حفظ فاتورة البيع');saleCart=[];"
+        if html.count(early)!=1:raise RuntimeError('R311: early toast not unique')
+        html=html.replace(early,"if(!window.pos311SaleActive?.())toast('تم حفظ فاتورة البيع');saleCart=[];",1)
+        pilot_script="""<script id="pos7-r311-sale-single-commit">
+(function(){
+ 'use strict';
+ if(window.pos311Installed)return;
+ const original=window.saveSale;
+ if(typeof original!=='function')throw Error('R311: sale function missing');
+ let active=false,committing=false,deferred=0;
+ window.pos311SaleActive=()=>active;
+ window.pos311DeferSaleSave=function(){
+   if(!active||committing)return false;
+   deferred++;return true;
+ };
+ window.pos311Last=null;
+ function snapshotForm(){
+   const ids=['customer','salePaid','saleTitle','saveSaleBtn',
+              'saleDiscount','saleCurrency','saleRate',
+              'salePayRows','saleChangeRows'];
+   const saved={};
+   ids.forEach(id=>{
+     const el=document.getElementById(id);if(!el)return;
+     saved[id]=('value' in el)?{value:el.value}:{text:el.textContent,html:el.innerHTML};
+   });
+   return saved;
+ }
+ function restoreForm(saved){
+   Object.entries(saved).forEach(([id,detail])=>{
+     const el=document.getElementById(id);if(!el)return;
+     if(Object.prototype.hasOwnProperty.call(detail,'value'))el.value=detail.value;
+     else if(id==='salePayRows'||id==='saleChangeRows')el.innerHTML=detail.html;
+     else el.textContent=detail.text;
+   });
+ }
+ function restore(raw,cart,mode,modeType,editing,form){
+   const previous=JSON.parse(raw);
+   Object.keys(state).forEach(k=>delete state[k]);
+   Object.assign(state,previous);
+   saleCart=JSON.parse(cart);
+   salePayment=mode;
+   salePaymentType=modeType;
+   editingSaleId=editing;
+   restoreForm(form);
+ }
+ const wrapped=function(){
+   // Non-intrusive trial. Old invoices and auto-print still use R309 path.
+   if(editingSaleId!=null||window.pos408GetSettings?.().autoPrint)
+     return original.apply(this,arguments);
+   if(active){toast('حفظ البيع قيد التنفيذ');return false;}
+   const raw=JSON.stringify(state),cart=JSON.stringify(saleCart||[]);
+   const mode=salePayment,type=salePaymentType,edit=editingSaleId,form=snapshotForm();
+   const beforeIds=new Set((state.sales||[]).map(x=>String(x.id)));
+   let result,committed=false;
+   active=true;deferred=0;
+   try{
+     result=original.apply(this,arguments);
+     const created=(state.sales||[]).filter(x=>!beforeIds.has(String(x.id)));
+     if(result===false||created.length===0){
+       if(deferred)restore(raw,cart,mode,type,edit,form);
+       window.pos311Last={status:'skipped',deferred};
+       return result;
+     }
+     if(created.length!==1)throw Error('R311: ambiguous invoice');
+     const inv=created[0];
+     if(!inv||inv.cancelled||!inv.number)throw Error('R311: incomplete sale invoice');
+     if((state.sales||[]).filter(x=>String(x.number)===String(inv.number)).length!==1)
+       throw Error('R311: duplicate sale invoice number');
+     const journal=(state.doubleEntryJournal||[]).find(
+       x=>x.sourceKey==='sale:'+String(inv.id)&&!x.reversed);
+     if(!journal||!journal.balanced||!journal.posted||
+        !Number.isFinite(Number(journal.totalDebitUSD))||
+        !Number.isFinite(Number(journal.totalCreditUSD))||
+        Math.abs(Number(journal.totalDebitUSD)-Number(journal.totalCreditUSD))>0.000001)
+       throw Error('R311: balanced journal entry missing');
+     if(deferred===0)throw Error('R311: expected deferred saves missing');
+     committing=true;
+     pos7R102SaveStateDirect();
+     committing=false;committed=true;
+     window.pos311Last={status:'committed',reference:inv.number,deferred,durableWrites:1};
+     toast('تم حفظ فاتورة البيع');
+     return result;
+   }catch(e){
+     if(!committed){
+       try{restore(raw,cart,mode,type,edit,form)}
+       catch(rollback){console.error('R311 rollback',rollback)}
+     }
+     window.pos311Last={status:'failed',deferred,error:String(e?.message||e)};
+     console.error('R311 sale commit error',e);
+     toast('لم يُعتمد حفظ البيع؛ أُعيدت الحالة السابقة. '+String(e?.message||e));
+     return false;
+   }finally{
+     active=false;committing=false;
+     if(window.pos311Last?.status==='failed'){
+       try{renderProducts();renderCart();renderHome()}catch(e){console.warn(e)}
+     }
+   }
+ };
+ window.saveSale=saveSale=wrapped;
+ window.pos311Installed=true;
+})();
+</script>
+"""
+        diag_marker='<script id="pos185-invoice-save-diagnostics">'
+        if html.count(diag_marker)!=1:raise RuntimeError('R311: diagnostic script not unique')
+        html=html.replace(diag_marker,pilot_script+diag_marker,1)
+        assert html.count('id="pos7-r311-sale-single-commit"')==1
+        assert 'window.pos310Installed=true' in html
+        assert 'window.pos311SaleActive?.()' in html
+    build_tag='r311' if branch=='tab2' else 'r305'
     if branch=='tab2':
         # R308: the on-screen version is generated from the SAME build tag
         # used for Android versionName, instead of the old R215 text.
