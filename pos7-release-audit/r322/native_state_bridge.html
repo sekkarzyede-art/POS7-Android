@@ -1,0 +1,114 @@
+<script id="pos7-r322-native-state-storage">
+(function(){
+'use strict';
+/*
+ * R322 TAB1: an Android private atomic file backs POS7_TRIAL188_CLEAN.
+ * The existing localStorage key is never deleted by the migration.
+ * Existing code keeps using the SAME synchronous localStorage API.
+ */
+var MAIN='POS7_TRIAL188_CLEAN';
+var proto=Storage.prototype, oldGet=proto.getItem, oldSet=proto.setItem,
+    oldRemove=proto.removeItem,oldClear=proto.clear;
+var bridge=window.Pos7Android,active=false,cache=null,fault='',migrated=false;
+function isLocal(o){try{return o===window.localStorage}catch(e){return false}}
+function nativeRead(){
+ var x=bridge.pos322ReadState();
+ if(typeof x==='string'&&x.indexOf('__POS7_R322_')===0)
+  throw Error('R322: تعذر الوصول إلى التخزين الموسع: '+x);
+ return x==null?null:String(x);
+}
+function valid(text){
+ var parsed=JSON.parse(text);
+ if(!parsed||!Array.isArray(parsed.products)||!Array.isArray(parsed.sales)||!Array.isArray(parsed.purchases))
+  throw Error('R322: بنية بيانات المتجر غير صحيحة');
+ return true;
+}
+function status(){
+ return {active:active,migrated:migrated,bytes:cache?cache.length:0,
+    hasOldCopy:(function(){try{return oldGet.call(window.localStorage,MAIN)!==null}catch(e){return null}})(),
+    error:fault,source:active?'private-atomic-android-file':'legacy-localstorage'};
+}
+function showFatal(message){
+ fault=String(message||'فشل مجهول');
+ try{
+  document.addEventListener('DOMContentLoaded',function(){
+   var el=document.createElement('div');el.dir='rtl';
+   el.id='pos7R322Fatal';el.style.cssText='position:fixed;inset:8%;z-index:2147483647;background:#fff1f1;border:4px solid #b91c1c;color:#7f1d1d;padding:25px;overflow:auto;font:bold 20px Arial';
+   el.textContent='توقّف حفظ البيانات حمايةً للمتجر. لم نحذف النسخة القديمة. السبب: '+fault+
+     '. لا تعمل فاتورة جديدة؛ استخدم نسختك الخارجية أو تقرير التشخيص.';
+   document.body.appendChild(el);
+  },{once:true});
+ }catch(_e){}
+}
+if(bridge&&typeof bridge.pos322ReadState==='function'&&typeof bridge.pos322WriteState==='function'){
+ try{
+  var current=nativeRead();
+  if(current!==null){
+   valid(current);
+  }else{
+   var old=oldGet.call(window.localStorage,MAIN);
+   if(old===null)throw Error('R322: لا توجد بيانات المتجر الأصلية؛ الترحيل موقوف');
+   valid(old);
+   if(bridge.pos322WriteState(old)!==true)
+    throw Error('R322: تعذّر حفظ النسخة الأولية في ملف أندرويد');
+   current=nativeRead();
+   if(current!==old)throw Error('R322: فشل التحقق من تطابق النسخة المنقولة');
+   migrated=true;
+  }
+  cache=current;
+  active=true;
+ }catch(e){showFatal(e&&e.message||e)}
+}else{
+ // HTML/browser preview remains on its old localStorage backend only.
+ window.POS7_R322_NATIVE_STORE={status:status};
+ return;
+}
+proto.getItem=function(key){
+ if(isLocal(this)&&String(key)===MAIN){
+  if(fault)throw Error('R322: التخزين الموسع غير متاح: '+fault);
+  if(active)return cache;
+ }
+ return oldGet.apply(this,arguments);
+};
+proto.setItem=function(key,value){
+ if(isLocal(this)&&String(key)===MAIN){
+  if(fault)throw Error('R322: التخزين الموسع غير متاح: '+fault);
+  if(active){
+   var next=String(value);
+   if(next.length<2||next.charAt(0)!=='{')throw Error('R322: صيغة حفظ البيانات غير صحيحة');
+   if(bridge.pos322WriteState(next)!==true)
+    throw Error('R322: فشل الحفظ في ملف أندرويد؛ بقيت النسخة السابقة سليمة');
+   cache=next;
+   return;
+  }
+ }
+ return oldSet.apply(this,arguments);
+};
+proto.removeItem=function(key){
+ if(isLocal(this)&&String(key)===MAIN)
+  throw Error('R322: حذف قاعدة المتجر محظور. صدّر نسخة خارجية واستخدم مسار نقل آمن.');
+ return oldRemove.apply(this,arguments);
+};
+proto.clear=function(){
+ if(isLocal(this))throw Error('R322: منع مسح بيانات المتجر بالكامل حماية للنسخة الأصلية');
+ return oldClear.apply(this,arguments);
+};
+function mount(){
+ if(!active||document.getElementById('pos7R322Info'))return;
+ var btn=document.createElement('button');btn.id='pos7R322Info';btn.type='button';
+ btn.textContent='🗄️ التخزين الموسّع R322';
+ btn.style.cssText='position:fixed;bottom:66px;right:10px;z-index:2147481900;padding:10px;border-radius:10px;background:#1d4c49;color:#fff;border:2px solid #fff;font:bold 14px Arial';
+ btn.onclick=function(){
+  var x=status();
+  alert('التخزين الموسّع: '+(x.active?'فعال ✓':'غير فعال')+
+        '\nحجم البيانات الحالية في ملف أندرويد: '+(x.bytes/1024/1024).toFixed(2)+' MB'+
+        '\nالنسخة الأصلية في localStorage: '+(x.hasOldCopy?'محفوظة للرجوع':'غير موجودة')+
+        '\nلا تمسح بيانات التطبيق ولا تعد لإصدار أقدم دون استعادة نسخة احتياطية حديثة.');
+ };
+ document.body.appendChild(btn);
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mount);
+else mount();
+window.POS7_R322_NATIVE_STORE={status:status};
+})();
+</script>
