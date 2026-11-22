@@ -36,6 +36,10 @@ function local(raw){
 async function simulate(options={}){
  const state=JSON.parse(JSON.stringify(data));
  const storage=local(JSON.stringify(state)),calls=[],alerts=[];
+ if(options.existingRequest)storage.setItem('POS7_R325_REBASE_PENDING',JSON.stringify({
+  request_id:'22222222-2222-4222-8222-222222222222',
+  device:'trusted-device-1',expected:3719,product_count:3
+ }));
  const normItems={};
  state.products.forEach(p=>normItems[p.id===44?'barcode:'+p.barcode:String(p.id)]={
    id:p.id===44?'barcode:'+p.barcode:String(p.id),
@@ -59,6 +63,7 @@ async function simulate(options={}){
    }
    if(name==='pos7_restore_same_device_status_r325'){
      verifies++;
+     if(options.existingRequest)return {ok:false,reason:options.ambiguousReceipt?'network_unknown':'receipt_missing'};
      return {ok:options.verify!==false,same_device:true,fingerprint:'match',
        expected_fingerprint:'match',catalog_count:3,revision:3720};
    }
@@ -86,6 +91,15 @@ async function simulate(options={}){
  await window.POS7_R325_SAFE_SYNC.run();
  return {storage,original:JSON.stringify(data),calls,alerts,reloaded,verifies,raw:storage.getItem('POS7_TRIAL188_CLEAN')};
 }
+let recovered=await simulate({existingRequest:true});
+assert.equal(recovered.reloaded,true,'timed-out request is recovered only after missing receipt');
+assert.ok(recovered.calls.includes('pos7_restore_same_device_status_r325'));
+assert.ok(recovered.calls.includes('pos7_restore_same_device_r325'));
+assert.equal(recovered.storage.getItem('POS7_R325_REBASE_PENDING'),null);
+let unknown=await simulate({existingRequest:true,ambiguousReceipt:true});
+assert.equal(unknown.reloaded,false,'ambiguous receipt must stop');
+assert.equal(unknown.storage.getItem('POS7_R174_SMART_CAS_SERVER_VERIFIED'),null);
+assert.ok(!unknown.calls.includes('pos7_restore_same_device_r325'),'unknown status cannot start a second write');
 let ok=await simulate();
 assert.equal(ok.reloaded,true,'server verification then reload');
 assert.equal(ok.storage.getItem('POS7_R174_SMART_CAS_SERVER_VERIFIED'),'yes');
