@@ -11,7 +11,7 @@ assert.ok(stock.includes('function buildSaleIndex()'));
 assert.ok(h.includes('POS7_RESTORE_PENDING_R305'));
 assert.ok(h.includes('window.pos310Installed=true'));
 assert.ok(!h.includes('window.pos311SaleActive'));
-assert.ok(h.includes('المتجر الثاني — قاعدة مستقلة • 485.7.229-r320-tab2'));
+assert.ok(h.includes('المتجر الثاني — قاعدة مستقلة • 485.7.229-r323-tab2'));
 
 const now=Date.now();
 const ago=n=>new Date(now-n*86400000).toISOString();
