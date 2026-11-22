@@ -10,7 +10,7 @@ assert.ok(h.includes('id="pos7-r325-safe-sync"'));
 assert.ok(h.includes('pos7-r322-native-state-storage'));
 assert.ok(h.includes('POS7_R174_SMART_CAS_SERVER_VERIFIED'));
 assert.ok(h.includes('pos7_inventory_commit_r155'));
-assert.ok(gradle.includes("versionName '485.7.229-r325-tab1'"));
+assert.ok(gradle.includes("versionName '485.7.229-r327-tab1'"));
 assert.ok(sql.includes('same_device_r325_receipts'));
 assert.ok(sql.includes("event_type<>'inventory_count'"));
 assert.ok(sql.includes('r325_product_revision_not_rebased'));
@@ -68,7 +68,7 @@ async function simulate(options={}){
  const document={readyState:'loading',addEventListener(){},getElementById(){return null},documentElement:{}};
  const window={
   P7Cloud:cloud,
-  P7TabletTest:{cashierBusy:()=>false,isBusy:()=>false},
+  P7TabletTest:{cashierBusy:()=>false,/* R327 regression: actual Tab1 exports cashierBusy only, no isBusy */},
   pos7BuildOwnerSnapshot:async()=>({sections:{
    products:JSON.parse(JSON.stringify(normItems)),sales:{},purchases:{},
    cash:{},cashLedger:{},customers:{},expenses:{},meta:{},payments:{},
