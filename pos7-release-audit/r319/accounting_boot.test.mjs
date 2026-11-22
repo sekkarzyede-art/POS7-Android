@@ -7,7 +7,7 @@ function script(tag){
   assert.equal(html.split(tag).length,2,'unique script anchor: '+tag);
   return html.split(tag)[1].split('</script>')[0];
 }
-const v105=script('<script>\n/* POS7 v105 —');
+const v105='/* POS7 v105 —'+script('<script>\n/* POS7 v105 —');
 const v165=script('<script id="pos7-v165-unified-accounting-journal">');
 const clone=x=>JSON.parse(JSON.stringify(x));
 
