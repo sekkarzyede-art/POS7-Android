@@ -84,7 +84,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import os
-          code=2000000000+int(os.environ['GITHUB_RUN_NUMBER'])
+          code=2050000000+int(os.environ['GITHUB_RUN_NUMBER'])
           if code>2100000000:raise SystemExit('Bad version code')
           with open(os.environ['GITHUB_ENV'],'a') as f:f.write(f'POS7_VERSION_CODE={code}\n')
           print('versionCode=',code)
