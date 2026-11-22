@@ -250,7 +250,7 @@ state=b.data;persist();toast('تمت استعادة النسخة؛ اعتمد ن
         # R314 diagnostic only: do not carry over R313 compression changes.
         # Initial timing bootstrap executes before the app's parser scripts.
         boot=Path('pos7-release-audit/r314/boot_diag.js').read_text()
-        if html.count('<head>')!=1:raise RuntimeError('R314: unique document head not found')
+        if '<head>' not in html[:200]:raise RuntimeError('R314: real document head not found')
         html=html.replace('<head>','<head><script id="pos7-r314-boot-profiler">'+boot+'</script>',1)
         load_start="<script>\nconst KEY='POS7_TRIAL188_CLEAN';"
         if html.count(load_start)!=1:raise RuntimeError('R314: state initialization anchor changed')
