@@ -41,12 +41,14 @@ jobs:
           if h.count(old)!=1:raise SystemExit('R288 safety stop: unexpected compression path count '+str(h.count(old)))
           h=h.replace(old,'window.pako.deflate(value,{level:1}); /* R288: lossless faster compression, same persisted format */',1)
           # Remove only the known duplicate diagnostic serialization, not the durable write.
-          oldblock="""  var pos185SerializationStart=(window.pos185Diag && window.pos185Diag.active)?performance.now():-1;
-          var pos185Serialized=JSON.stringify(state);
-          if(pos185SerializationStart>=0)window.pos185Diag.part('تحويل قاعدة المتجر إلى JSON',performance.now()-pos185SerializationStart);
-          """
-          if h.count(oldblock)!=1:raise SystemExit('R288 safety stop: duplicate-serialization source not matched')
-          h=h.replace(oldblock,'  // R288: removed the redundant diagnostic-only JSON.stringify.\n  ',1)
+          lines=h.splitlines(keepends=True)
+          indices=[i for i,line in enumerate(lines) if 'var pos185Serialized=JSON.stringify(state);' in line]
+          if len(indices)!=1:raise SystemExit('R288 safety stop: duplicate diagnostic serialization count '+str(len(indices)))
+          i=indices[0]
+          if i==0 or i+1>=len(lines) or 'var pos185SerializationStart=' not in lines[i-1] or 'if(pos185SerializationStart>=0)' not in lines[i+1]:
+              raise SystemExit('R288 safety stop: unexpected diagnostic serialization neighborhood')
+          del lines[i-1:i+2]
+          h=''.join(lines)
           # The actual revision stamping and synchronous durable save remain unchanged.
           if 'pos7R100PrepareStockRevisions();' not in h or 'localStorage.setItem(KEY,JSON.stringify(state));' not in h:
               raise SystemExit('R288 safety stop: durable stock revision write changed')
