@@ -14,7 +14,7 @@ assert.ok(html.includes('for(var i=0;i<storage.length;i++)keys.push(storage.key(
 assert.ok(html.includes('POS7_RESTORE_PENDING_R305'));
 assert.ok(html.includes('window.pos310Installed=true'));
 assert.ok(!html.includes('window.pos311SaleActive'));
-assert.ok(html.includes('المتجر الثاني — قاعدة مستقلة • 485.7.229-r319-tab2'));
+assert.ok(html.includes('المتجر الثاني — قاعدة مستقلة • 485.7.229-r320-tab2'));
 const code=html.split(head)[1].split('</script>')[0];
 new vm.Script(code);
 const listeners={};
