@@ -187,8 +187,9 @@ window.POS7_R321_RECOVERY={open:function(){var b=document.getElementById("pos7R3
 })();
 </script>
 '''
-assert h.count("</body>")==1
-h=h.replace("</body>",rescue+"\n</body>",1)
+# The original R213 source appends feature scripts after </html>.
+# Follow the same proven pattern rather than rewriting HTML inside JS templates.
+h+='\n'+rescue
 assert "POS7_R174_SMART_CAS_SERVER_VERIFIED" in h
 assert "POS7_TRIAL188_CLEAN" in h
 assert h.count("pos7-r321-tab1-quota-recovery")==1
