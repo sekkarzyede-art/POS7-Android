@@ -258,6 +258,15 @@ state=b.data;persist();toast('تمت استعادة النسخة؛ اعتمد ن
         sync_guard="if(window.pos310PurchaseActive?.())return false;"
         if html.count(sync_guard)!=1:raise RuntimeError('R311: purchase cloud guard not unique')
         html=html.replace(sync_guard,sync_guard+"\n if(window.pos311SaleActive?.())return false;",1)
+        # Keep the three sale-basket drafts intact while the transaction is
+        # uncommitted. Write their updated draft only after success / rollback.
+        three_basket_old="if(saved){slots[active]=blank();write();apply(slots[active]);if(window.pos485SaveSession)pos485SaveSession()}return r}finally{busy=false;checkpoint()}};"
+        three_basket_new="if(saved&&!window.pos311SaleActive?.()){slots[active]=blank();write();apply(slots[active]);if(window.pos485SaveSession)pos485SaveSession()}return r}finally{busy=false;if(!window.pos311SaleActive?.())checkpoint()}};"
+        if html.count(three_basket_old)!=1:raise RuntimeError('R311: sale basket completion flow changed')
+        html=html.replace(three_basket_old,three_basket_new,1)
+        draft_anchor=" const render=window.renderCart;window.renderCart=renderCart=function(){"
+        if html.count(draft_anchor)!=1:raise RuntimeError('R311: sale draft checkpoint anchor changed')
+        html=html.replace(draft_anchor," window.pos311CheckpointSaleBasket=function(){checkpoint()};\n"+draft_anchor,1)
         # Suppress the original early success toast while sale is uncommitted;
         # it is emitted only after the final storage write has succeeded.
         early="toast('تم حفظ فاتورة البيع');saleCart=[];"
@@ -311,6 +320,7 @@ state=b.data;persist();toast('تمت استعادة النسخة؛ اعتمد ن
      return original.apply(this,arguments);
    if(active){toast('حفظ البيع قيد التنفيذ');return false;}
    const raw=JSON.stringify(state),cart=JSON.stringify(saleCart||[]);
+   const durableBefore=localStorage.getItem('POS7_TRIAL188_CLEAN');
    const mode=salePayment,type=salePaymentType,edit=editingSaleId,form=snapshotForm();
    const beforeIds=new Set((state.sales||[]).map(x=>String(x.id)));
    let result,committed=false;
@@ -335,7 +345,9 @@ state=b.data;persist();toast('تمت استعادة النسخة؛ اعتمد ن
         !Number.isFinite(Number(journal.totalCreditUSD))||
         Math.abs(Number(journal.totalDebitUSD)-Number(journal.totalCreditUSD))>0.000001)
        throw Error('R311: balanced journal entry missing');
-     if(deferred===0)throw Error('R311: expected deferred saves missing');
+     if(deferred<2)throw Error('R311: expected deferred saves missing');
+     if(localStorage.getItem('POS7_TRIAL188_CLEAN')!==durableBefore)
+       throw Error('R311: unexpected early durable write');
      committing=true;
      pos7R102SaveStateDirect();
      committing=false;committed=true;
@@ -353,6 +365,7 @@ state=b.data;persist();toast('تمت استعادة النسخة؛ اعتمد ن
      return false;
    }finally{
      active=false;committing=false;
+     try{window.pos311CheckpointSaleBasket?.()}catch(e){console.warn('R311 draft checkpoint',e)}
      if(window.pos311Last?.status==='failed'){
        try{renderProducts();renderCart();renderHome()}catch(e){console.warn(e)}
      }
