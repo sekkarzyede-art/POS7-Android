@@ -1,5 +1,5 @@
 -- R325 / Store 1 only. Same-device restore adoption, NOT a publisher transfer.
--- Intentionally do not run against Store 1 (sekkarzyede-art).
+-- Never run this Store1 routine on the separate Store2 project.
 BEGIN;
 CREATE SCHEMA IF NOT EXISTS pos7_transfer_private;
 REVOKE ALL ON SCHEMA pos7_transfer_private FROM PUBLIC,anon,authenticated;
@@ -66,6 +66,10 @@ BEGIN
  IF bad_product_count <> 0 THEN
    RAISE EXCEPTION 'r325_malformed_products';
  END IF;
+ -- A fresh authoritative revision baseline must be explicit on every row.
+ IF EXISTS(SELECT 1 FROM jsonb_each(p_sections->'products') AS e(k,v)
+           WHERE jsonb_typeof(e.v->'stock_revision') IS DISTINCT FROM 'number'
+              OR coalesce(e.v->>'stock_revision','') !~ '^(0|[1-9][0-9]*)
  -- Require explicitly rebased trustworthy revisions, never silently import NULL.
  IF EXISTS(SELECT 1 FROM jsonb_each(p_sections->'products') AS e(k,v)
            WHERE jsonb_typeof(e.v->'stock_revision') IS DISTINCT FROM 'number'
@@ -184,9 +188,12 @@ GRANT EXECUTE ON FUNCTION public.pos7_restore_same_device_r325(uuid,text,bigint,
 GRANT EXECUTE ON FUNCTION public.pos7_restore_same_device_status_r325(uuid)
  TO authenticated;
 COMMIT;
-
               OR e.v->>'stock_revision_untrusted' IS DISTINCT FROM 'false')
  THEN RAISE EXCEPTION 'r325_product_revision_not_rebased'; END IF;
+ -- Require explicitly rebased trustworthy revisions, never silently import NULL.
+ IF EXISTS(SELECT 1 FROM jsonb_each(p_sections->'products') AS e(k,v)
+           WHERE jsonb_typeof(e.v->'stock_revision') IS DISTINCT FROM 'number'
+              OR coalesce(e.v->>'stock_revision','') !~ '^(0|[1-9][0-9]*)
 
  -- Lock in same order as inventory writer and existing R305 transfer path.
  SELECT * INTO g FROM public.pos7_inventory_gate_r152
@@ -232,7 +239,7 @@ COMMIT;
  result_data:=jsonb_build_object('ok',true,'revision',s.revision+1,
    'publisher_device',s.publisher_device,
    'approved_device',g.approved_device,
-   'catalog_count',new_catalog_count,
+   'catalog_count',new_catalog_count,'pending_inventory_commands',pending_count,
    'request_id',p_request_id,'fingerprint',md5(p_sections::text),
    'replayed',false);
  INSERT INTO pos7_transfer_private.same_device_r325_receipts(
