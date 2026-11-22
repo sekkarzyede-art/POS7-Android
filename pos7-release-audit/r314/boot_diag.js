@@ -2,13 +2,67 @@
 'use strict';
 if(window.POS7_BOOT_DIAG_R314)return;
 var t0=performance.now(), D={
- version:'R314 tablet2 boot diagnostics',startRelativeMs:Math.round(t0),
+ version:'R315 DOMContentLoaded attribution diagnostics',startRelativeMs:Math.round(t0),
  startEpoch:new Date().toISOString(),longTasks:[],metrics:{},
  storage:{reads:0,writes:0,readMs:0,writeMs:0,readMaxMs:0,writeMaxMs:0},
  compression:{inflates:0,deflates:0,inflateMs:0,deflateMs:0},
  functions:{},events:[],startup:{},state:{},cloud:{}
 };
 window.POS7_BOOT_DIAG_R314=D;
+
+D.domListeners=[];
+D.domSummary={registered:0,called:0,totalMs:0,maxMs:0};
+(function instrumentDOMContentLoaded(){
+ var rawAdd=document.addEventListener, rawRemove=document.removeEventListener;
+ var listenerMap=new WeakMap(), sequence=0;
+ function label(listener){
+  var current=document.currentScript;
+  var source=current?(current.id||('inline-script-'+Array.prototype.indexOf.call(document.scripts,current))):'unknown-script';
+  var sourceBody='';
+  try{sourceBody=String(typeof listener==='function'?listener:listener.handleEvent).replace(/\s+/g,' ').slice(0,180)}
+  catch(e){sourceBody='unknown-handler'}
+  return {source:source,callbackPreview:sourceBody};
+ }
+ document.addEventListener=function(type,listener,options){
+  if(type!=='DOMContentLoaded'||(!listener)||(typeof listener!=='function'&&typeof listener.handleEvent!=='function'))
+   return rawAdd.apply(this,arguments);
+  var capture=typeof options==='boolean'?options:!!(options&&options.capture);
+  var cached=listenerMap.get(listener);
+  if(!cached){cached={};listenerMap.set(listener,cached)}
+  var slot=capture?'capture':'bubble';
+  var wrapper=cached[slot];
+  if(!wrapper){
+   var info=label(listener),id=++sequence;
+   var record={id:id,source:info.source,callbackPreview:info.callbackPreview,
+               registeredAtMs:round(performance.now()-t0),calls:0,totalMs:0,maxMs:0};
+   D.domListeners.push(record);D.domSummary.registered++;
+   wrapper=function(event){
+    var started=performance.now(),offset=round(started-t0);
+    try{
+     return typeof listener==='function'?listener.call(this,event):listener.handleEvent.call(listener,event);
+    }finally{
+     var elapsed=performance.now()-started;
+     record.calls++;record.totalMs+=elapsed;record.maxMs=Math.max(record.maxMs,elapsed);
+     record.lastStartMs=offset;record.lastEndMs=round(performance.now()-t0);
+     D.domSummary.called++;D.domSummary.totalMs+=elapsed;
+     D.domSummary.maxMs=Math.max(D.domSummary.maxMs,elapsed);
+    }
+   };
+   cached[slot]=wrapper;
+  }
+  return rawAdd.call(this,type,wrapper,options);
+ };
+ document.removeEventListener=function(type,listener,options){
+  if(type==='DOMContentLoaded'&&listener){
+   var cache=listenerMap.get(listener);
+   var capture=typeof options==='boolean'?options:!!(options&&options.capture);
+   var replacement=cache&&(capture?cache.capture:cache.bubble);
+   if(replacement)return rawRemove.call(this,type,replacement,options);
+  }
+  return rawRemove.apply(this,arguments);
+ };
+})();
+
 function round(x){return Math.round((Number(x)||0)*10)/10}
 D.mark=function(n){D.events.push({name:n,atMs:round(performance.now()-t0)});D.startup[n+'Ms']=round(performance.now()-t0)};
 D.report=function(){
@@ -32,6 +86,12 @@ D.report=function(){
  writeMs:round(D.storage.writeMs),maxReadMs:round(D.storage.readMaxMs),maxWriteMs:round(D.storage.writeMaxMs)},
  compression:{inflateCalls:D.compression.inflates,deflateCalls:D.compression.deflates,
  inflateMs:round(D.compression.inflateMs),deflateMs:round(D.compression.deflateMs)},
+ domReadyHandlers:{registered:D.domSummary.registered,called:D.domSummary.called,
+ totalMs:round(D.domSummary.totalMs),maxMs:round(D.domSummary.maxMs),
+ slowest:D.domListeners.filter(function(x){return x.calls>0}).sort(function(a,b){return b.totalMs-a.totalMs}).slice(0,30).map(function(x){
+  return {id:x.id,source:x.source,callbackPreview:x.callbackPreview,registeredAtMs:x.registeredAtMs,
+  calls:x.calls,totalMs:round(x.totalMs),maxMs:round(x.maxMs),startMs:x.lastStartMs,endMs:x.lastEndMs}
+ })},
  functions:f,longTasksCount:D.longTasks.length,
  longTasksTotalMs:round(D.longTasks.reduce(function(s,x){return s+x.durationMs},0)),
  longestTasks:long.slice(0,15),events:D.events.slice(),cloud:(function(){
@@ -122,13 +182,13 @@ window.pos314HookFunctions=function(){
 
 };
 function mount(){
- if(document.getElementById('pos314BootButton'))return;
+ if(document.getElementById('pos315BootButton'))return;
  var btn=document.createElement('button');
- btn.id='pos314BootButton';btn.type='button';btn.textContent='⏱ قياس الإقلاع';
+ btn.id='pos315BootButton';btn.type='button';btn.textContent='⏱ قياس الإقلاع';
  btn.style.cssText='position:fixed;left:10px;bottom:14px;z-index:2147482000;background:#0f766e;color:white;border:2px solid #fff;border-radius:14px;padding:12px 15px;box-shadow:0 3px 18px #0005;font:700 15px Tahoma,sans-serif';
- var panel=document.createElement('div');panel.id='pos314BootPanel';panel.dir='rtl';
+ var panel=document.createElement('div');panel.id='pos315BootPanel';panel.dir='rtl';
  panel.style.cssText='display:none;position:fixed;inset:3%;z-index:2147482999;background:#fff;color:#15212c;border:2px solid #0f766e;border-radius:16px;box-shadow:0 0 0 100vmax #0008;padding:15px;overflow:auto;font:14px/1.6 Tahoma,sans-serif';
- var title=document.createElement('div');title.textContent='تقرير قياس إقلاع POS7 — R314';
+ var title=document.createElement('div');title.textContent='تقرير قياس معالجات الإقلاع POS7 — R315';
  title.style.cssText='font-size:20px;font-weight:bold;margin:6px 0';
  var close=document.createElement('button');close.textContent='إغلاق';close.type='button';
  var copy=document.createElement('button');copy.textContent='نسخ التقرير';copy.type='button';
