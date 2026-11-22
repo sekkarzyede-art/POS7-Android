@@ -264,7 +264,7 @@ state=b.data;persist();toast('تمت استعادة النسخة؛ اعتمد ن
         three_basket_new="if(saved&&!window.pos311SaleActive?.()){slots[active]=blank();write();apply(slots[active]);if(window.pos485SaveSession)pos485SaveSession()}return r}finally{busy=false;if(!window.pos311SaleActive?.())checkpoint()}};"
         if html.count(three_basket_old)!=1:raise RuntimeError('R311: sale basket completion flow changed')
         html=html.replace(three_basket_old,three_basket_new,1)
-        draft_anchor=" const render=window.renderCart;window.renderCart=renderCart=function(){"
+        draft_anchor="const render=window.renderCart;window.renderCart=renderCart=function(){"
         if html.count(draft_anchor)!=1:raise RuntimeError('R311: sale draft checkpoint anchor changed')
         html=html.replace(draft_anchor," window.pos311CheckpointSaleBasket=function(){checkpoint()};\n"+draft_anchor,1)
         # Suppress the original early success toast while sale is uncommitted;
@@ -346,12 +346,14 @@ state=b.data;persist();toast('تمت استعادة النسخة؛ اعتمد ن
         Math.abs(Number(journal.totalDebitUSD)-Number(journal.totalCreditUSD))>0.000001)
        throw Error('R311: balanced journal entry missing');
      if(deferred<2)throw Error('R311: expected deferred saves missing');
-     if(localStorage.getItem('POS7_TRIAL188_CLEAN')!==durableBefore)
-       throw Error('R311: unexpected early durable write');
+     // If a legacy layer wrote early, finish safely rather than roll back
+     // memory against already-durable partial data. Mark this fallback.
+     const unexpectedWrite=localStorage.getItem('POS7_TRIAL188_CLEAN')!==durableBefore;
      committing=true;
      pos7R102SaveStateDirect();
      committing=false;committed=true;
-     window.pos311Last={status:'committed',reference:inv.number,deferred,durableWrites:1};
+     window.pos311Last={status:unexpectedWrite?'committed_extra_write':'committed',
+                        reference:inv.number,deferred,durableWrites:unexpectedWrite?2:1};
      toast('تم حفظ فاتورة البيع');
      return result;
    }catch(e){
