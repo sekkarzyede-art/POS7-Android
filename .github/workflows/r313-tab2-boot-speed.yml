@@ -1,0 +1,157 @@
+
+name: Build POS7 R313 Store2 faster startup trial
+on:
+  push:
+    branches: [pos7-r313-startup-optimization-tab2]
+  workflow_dispatch:
+    inputs:
+      installed_version_code:
+        description: 'Optional real installed tablet APK versionCode'
+        required: false
+        default: ''
+        type: string
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      matrix:
+        branch: [tab2]
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - uses: android-actions/setup-android@v4
+      - run: sdkmanager --install 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Prepare restored-backup transfer sources
+        run: python3 pos7-release-audit/r305/build_sources.py
+      - name: Check R305 restore, R310 purchase, R312 safe sale and R313 boot cleanup
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          base=Path('r305-android/tab2/POS7_Tablet/app/src/main/assets')
+          h=(base/'index.html').read_text()
+          g=Path('r305-android/tab2/POS7_Tablet/app/build.gradle').read_text()
+          assert 'POS7_RESTORE_PENDING_R305' in h
+          assert 'restore_transfer.js' in h
+          assert (base/'restore_transfer.js').exists()
+          assert 'window.pako.deflate(value,{level:1});' in h
+          assert 'window.pos307HomeBatchInstalled=true' in h
+          assert 'if(!window.pos307MarkHomeDirty || !window.pos307MarkHomeDirty())renderHome();' in h
+          assert 'var pos185Serialized=JSON.stringify(state);' not in h
+          assert "versionName '485.7.229-r313-tab2'" in g
+          assert h.count('المتجر الثاني — قاعدة مستقلة • 485.7.229-r313-tab2')==1
+          assert 'المتجر الثاني — قاعدة مستقلة • R215' not in h
+          assert 'window.pos309HomeBatchActive=()=>depth>0;' in h
+          assert "if(name==='renderHome' && window.pos309HomeBatchActive?.())" in h
+          assert h.count('id="pos7-r310-purchase-single-commit"')==1
+          assert 'window.pos310PurchaseActive?.()?pos7R102SaveStateDirect()' in h
+          assert 'if(window.pos310DeferSave?.())return;' in h
+          assert 'id="pos7-r311-sale-single-commit"' not in h
+          assert 'window.pos311SaleActive' not in h
+          assert 'id="pos7-r310-purchase-single-commit"' in h
+          assert h.count('id="pos7-r313-startup-timing"')==1
+          assert 'eagerMigrationSkipped=true' in h
+          assert 'for(var i=0;i<storage.length;i++)keys.push(storage.key(i))' not in h
+          print('R313 skips boot compression sweep; R305 restore, R310 purchase and R312 safe sale retained')
+          PY
+      - name: Test invoice home batching and durable writes
+        run: |
+          node pos7-release-audit/r307/coalesce.test.mjs
+          node pos7-release-audit/r309/render-home.test.mjs
+          node pos7-release-audit/r310/single-commit.test.mjs
+          node pos7-release-audit/r313/startup.test.mjs
+      - name: Check HTML JavaScript syntax
+        run: |
+          python3 - <<'PY2'
+          from html.parser import HTMLParser
+          import subprocess,pathlib
+          class P(HTMLParser):
+              def __init__(self): super().__init__();self.active=False;self.s=[]
+              def handle_starttag(self,t,a):
+                  if t=='script': self.active=True;self.s.append('')
+              def handle_endtag(self,t):
+                  if t=='script':self.active=False
+              def handle_data(self,d):
+                  if self.active:self.s[-1]+=d
+          p=P();p.feed(pathlib.Path('r305-android/${{ matrix.branch }}/POS7_Tablet/app/src/main/assets/index.html').read_text())
+          for i,s in enumerate(p.s):
+              if s.strip():
+                  r=subprocess.run(['node','--check'],input=s,text=True,capture_output=True)
+                  if r.returncode:raise SystemExit(f'Script {i}: {r.stderr}')
+          PY2
+      - name: Set upgrade versionCode
+        env:
+          INSTALLED_CODE: ${{ inputs.installed_version_code }}
+        run: |
+          python3 - <<'PY2'
+          import os
+          raw=os.getenv('INSTALLED_CODE','').strip()
+          if raw and (not raw.isascii() or not raw.isdecimal()):raise SystemExit('Invalid installed code')
+          code=max(2001008000+int(os.environ['GITHUB_RUN_NUMBER']),int(raw)+1 if raw else 0)
+          if code>2100000000:raise SystemExit('versionCode exceeds Android limit')
+          with open(os.environ['GITHUB_ENV'],'a') as f:f.write(f'POS7_VERSION_CODE={code}\n')
+          print('New tablet versionCode:',code)
+          PY2
+      - name: Verify original tablet release signing certificate
+        env:
+          POS7_KEYSTORE_BASE64: ${{ secrets.POS7_KEYSTORE_BASE64 }}
+          POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
+          POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
+          POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for k in POS7_KEYSTORE_BASE64 POS7_KEYSTORE_PASSWORD POS7_KEY_ALIAS POS7_KEY_PASSWORD; do test -n "${!k:-}" || { echo "Missing secret $k"; exit 1; }; done
+          umask 077
+          printf '%s' "$POS7_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/pos7-tablet-release.jks"
+          actual=$(keytool -exportcert -keystore "$RUNNER_TEMP/pos7-tablet-release.jks" -storepass:env POS7_KEYSTORE_PASSWORD -alias "$POS7_KEY_ALIAS" | sha256sum | awk '{print $1}')
+          expected='843ed618b18ec7a0cbb50f38984374540da016c41a8df8042bb8db19964d4495'
+          test "$actual" = "$expected" || { echo 'Original tablet signing certificate mismatch'; exit 1; }
+          echo "POS7_KEYSTORE_PATH=$RUNNER_TEMP/pos7-tablet-release.jks" >> "$GITHUB_ENV"
+          echo "POS7_SIGNING_CERT_SHA256=$actual" >> "$GITHUB_ENV"
+      - name: Build signed tablet APK
+        working-directory: r305-android/${{ matrix.branch }}/POS7_Tablet
+        env:
+          POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
+          POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
+          POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
+        run: gradle --no-daemon clean assembleRelease
+      - name: Verify final APK and package
+        run: |
+          set -euo pipefail
+          apk=r305-android/${{ matrix.branch }}/POS7_Tablet/app/build/outputs/apk/release/app-release.apk
+          sdk="$ANDROID_HOME/build-tools/35.0.0"
+          "$sdk/apksigner" verify --verbose "$apk"
+          python3 - <<'PY'
+          import zipfile
+          apk='r305-android/tab2/POS7_Tablet/app/build/outputs/apk/release/app-release.apk'
+          with zipfile.ZipFile(apk) as z:
+              source=z.read('assets/index.html').decode('utf-8')
+          assert source.count('المتجر الثاني — قاعدة مستقلة • 485.7.229-r313-tab2')==1
+          assert 'المتجر الثاني — قاعدة مستقلة • R215' not in source
+          assert 'POS7_RESTORE_PENDING_R305' in source
+          assert 'window.pos307HomeBatchInstalled=true' in source
+          print('Signed APK contains correct R308 home banner and R305/R307 features')
+          PY
+          "$sdk/aapt" dump badging "$apk" | grep -F "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.229-r313-${{ matrix.branch }}'"
+          actual=$("$sdk/apksigner" verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2}' | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')
+          test "$actual" = "$POS7_SIGNING_CERT_SHA256"
+          mkdir -p output
+          cp "$apk" output/POS7_Tablet_R313_${{ matrix.branch }}.apk
+          sha256sum output/*.apk > output/SHA256SUMS.txt
+          printf 'versionName=485.7.229-r313-${{ matrix.branch }}\nversionCode=%s\n' "$POS7_VERSION_CODE" > output/build-info.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: POS7-Tablet-R313-${{ matrix.branch }}-${{ env.POS7_VERSION_CODE }}
+          path: output/
+          if-no-files-found: error
+      - name: Delete temporary signing material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/pos7-tablet-release.jks"
