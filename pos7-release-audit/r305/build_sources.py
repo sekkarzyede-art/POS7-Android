@@ -138,7 +138,115 @@ state=b.data;persist();toast('تمت استعادة النسخة؛ اعتمد ن
         html=html.replace(profiler,corrected,1)
         if 'window.pos309HomeBatchActive=()=>depth>0;' not in html or "if(name==='renderHome' && window.pos309HomeBatchActive?.())" not in html:
             raise RuntimeError('R309: batching/profile instrumentation missing')
-    build_tag='r309' if branch=='tab2' else 'r305'
+    if branch=='tab2':
+        # R310 trial: batch NEW PURCHASE invoices only. Cash/credit invoice
+        # edits, sales and auto-print keep the proven R309 write path.
+        # Keep R213 inventory gate: only defer AFTER its safety check.
+        guard="""  if(window.POS7_R166_RELOAD_REQUIRED||window.POS7_R167_RECONCILIATION_PENDING||window.POS7_R212_BATCH_ACTIVE)throw Error('R213: اعتماد دفعة الجرد جارٍ؛ لا تغيّر المخزون حتى انتهاء الدفعة');"""
+        if html.count(guard)!=1:raise RuntimeError('R310: unexpected direct-save safety gate')
+        html=html.replace(guard,guard+"\n  if(window.pos310DeferSave?.())return;",1)
+        # The purchase journal MUST be added to memory before the sole durable
+        # state write. Preserve the old direct-write path outside the trial.
+        journal_old="localStorage.setItem(KEY,JSON.stringify(state));return r}catch(e){var restored=JSON.parse(beforeState)"
+        journal_new="(window.pos310PurchaseActive?.()?pos7R102SaveStateDirect():localStorage.setItem(KEY,JSON.stringify(state)));return r}catch(e){var restored=JSON.parse(beforeState)"
+        if html.count(journal_old)!=1:raise RuntimeError('R310: purchase journal commit path changed')
+        html=html.replace(journal_old,journal_new,1)
+        rollback_old="purchaseCart=cartBefore;try{localStorage.setItem(KEY,beforeState)}catch(storageError){}"
+        rollback_new="purchaseCart=cartBefore;try{if(!window.pos310PurchaseActive?.())localStorage.setItem(KEY,beforeState)}catch(storageError){}"
+        if html.count(rollback_old)!=1:raise RuntimeError('R310: purchase journal rollback path changed')
+        html=html.replace(rollback_old,rollback_new,1)
+        # Hold auto-cloud publish until the local invoice transaction commits.
+        sync_marker="if(localStorage.getItem('POS7_RESTORE_PENDING_R305'))return false;"
+        if html.count(sync_marker)!=1:raise RuntimeError('R310: missing cloud gate')
+        html=html.replace(sync_marker,sync_marker+"\n if(window.pos310PurchaseActive?.())return false;",1)
+        trial_script="""<script id="pos7-r310-purchase-single-commit">
+(function(){
+ 'use strict';
+ if(window.pos310Installed)return;
+ const original=window.savePurchase;
+ if(typeof original!=='function')throw Error('R310: purchase save function missing');
+ let active=false,committing=false,deferred=0;
+ window.pos310PurchaseActive=()=>active;
+ window.pos310DeferSave=function(){
+   if(!active||committing)return false;
+   deferred++;
+   return true;
+ };
+ window.pos310Last=null;
+ function restoreState(raw,cartRaw,mode,source){
+   const restored=JSON.parse(raw);
+   Object.keys(state).forEach(k=>delete state[k]);
+   Object.assign(state,restored);
+   purchaseCart=JSON.parse(cartRaw);
+   purchasePayment=mode;
+   purchaseSource=source;
+ }
+ const wrapped=function(){
+   // Safer first trial: avoid legacy edit paths and pre-commit auto printing.
+   if(editingPurchaseId!=null||window.pos408GetSettings?.().autoPrint)
+     return original.apply(this,arguments);
+   if(active){toast('عملية حفظ الشراء قيد التنفيذ');return false;}
+   const oldState=JSON.stringify(state);
+   const oldCart=JSON.stringify(purchaseCart||[]);
+   const oldMode=purchasePayment,oldSource=purchaseSource;
+   const existingIds=new Set((state.purchases||[]).map(x=>String(x.id)));
+   let result,committed=false;
+   deferred=0;active=true;
+   try{
+     result=original.apply(this,arguments);
+     const created=(state.purchases||[]).filter(x=>!existingIds.has(String(x.id)));
+     if(result===false||created.length===0){
+       // No new invoice is not a successful transaction. All suppressed
+       // writes must be discarded, including validation/ledger rollback.
+       if(deferred)restoreState(oldState,oldCart,oldMode,oldSource);
+       window.pos310Last={status:'skipped',deferred:deferred};
+       return result;
+     }
+     if(created.length!==1)throw Error('R310: invoice identity is ambiguous');
+     const inv=created[0];
+     if(!inv||inv.cancelled||!inv.number)throw Error('R310: incomplete invoice');
+     if((state.purchases||[]).filter(x=>String(x.number)===String(inv.number)).length!==1)
+       throw Error('R310: duplicate purchase invoice number');
+     const sourceKey='purchase:'+String(inv.id);
+     const journal=(state.doubleEntryJournal||[]).find(x=>x.sourceKey===sourceKey&&!x.reversed);
+     if(!journal||!journal.balanced||!journal.posted||
+        Math.abs(Number(journal.totalDebitUSD)-Number(journal.totalCreditUSD))>0.000001)
+       throw Error('R310: balanced accounting entry missing');
+     if(deferred===0)throw Error('R310: expected deferred writes absent');
+     committing=true;
+     pos7R102SaveStateDirect(); // one revision stamp + one compressed local write
+     committing=false;committed=true;
+     window.pos310Last={status:'committed',reference:inv.number,
+                         deferred:deferred,durableWrites:1};
+     return result;
+   }catch(err){
+     if(!committed){
+       try{restoreState(oldState,oldCart,oldMode,oldSource)}
+       catch(rollbackError){console.error('R310 local rollback',rollbackError)}
+     }
+     window.pos310Last={status:'failed',deferred:deferred,error:String(err?.message||err)};
+     console.error('R310 purchase commit rejected',err);
+     toast('لم يُعتمد حفظ الشراء؛ أُعيدت الحالة السابقة. '+String(err?.message||err));
+     return false;
+   }finally{
+     active=false;committing=false;
+     if(window.pos310Last?.status==='failed'){
+       try{renderPurchaseCart();renderHome()}catch(e){console.warn(e)}
+     }
+   }
+ };
+ window.savePurchase=savePurchase=wrapped;
+ window.pos310Installed=true;
+})();
+</script>
+"""
+        diag_marker='<script id="pos185-invoice-save-diagnostics">'
+        if html.count(diag_marker)!=1:raise RuntimeError('R310: diagnostic script not unique')
+        html=html.replace(diag_marker,trial_script+diag_marker,1)
+        assert html.count('id="pos7-r310-purchase-single-commit"')==1
+        assert 'POS7_RESTORE_PENDING_R305' in html
+        assert 'window.pos309HomeBatchActive' in html
+    build_tag='r310' if branch=='tab2' else 'r305'
     if branch=='tab2':
         # R308: the on-screen version is generated from the SAME build tag
         # used for Android versionName, instead of the old R215 text.
