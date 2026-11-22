@@ -385,7 +385,7 @@ function summary(){
             html=html.replace(old,new,1)
         if "if(id==='home')renderHome();" not in html:
             raise RuntimeError('R318: missing authorized home render path')
-        if "document.addEventListener('DOMContentLoaded',restoreAuthorizedPage);" not in html:
+        if "document.addEventListener("DOMContentLoaded",restoreAuthorizedPage);" not in html:
             raise RuntimeError('R318: authorized-page restore listener missing')
         if "window.pos310Installed=true" not in html:
             raise RuntimeError('R318: purchase durable commit missing')
