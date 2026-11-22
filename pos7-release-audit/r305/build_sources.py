@@ -344,7 +344,30 @@ function summary(){
         html=html[:p]+stock+html[q:]
         assert html.count('function buildSaleIndex()')==1
         assert "document.addEventListener('DOMContentLoaded',summary);" not in html
-    build_tag='r316' if branch=='tab2' else 'r305'
+    if branch=='tab2':
+        # R317: prevent eager rendering of hidden panels at startup.
+        # All functions and accounting data remain intact. The authorized
+        # home page and expense page use their existing openPage render paths.
+        replacements=[
+            ("refreshSelects();renderProducts();renderCart();renderPurchaseCart();refreshPurchaseBarcode();setPurchaseSource('daily');setExpenseSource('daily');renderExpenses();renderHome();",
+             "refreshSelects();renderProducts();renderCart();renderPurchaseCart();refreshPurchaseBarcode();setPurchaseSource('daily');setExpenseSource('daily');/* R317: hidden expenses and home are rendered by openPage when shown. */"),
+            ("if(id==='ownerWalletPage')window.pos746Render();",
+             "if(id==='ownerWalletPage')init();"),
+            ("document.addEventListener('DOMContentLoaded',init);setTimeout(init,0);window.pos746Render();",
+             "document.addEventListener('DOMContentLoaded',function(){var page=$('ownerWalletPage');if(page&&page.classList.contains('active'))init()});"),
+            ("window.pos713CompareInit=init;document.addEventListener('DOMContentLoaded',init);",
+             "window.pos713CompareInit=init;/* R317: comparison selectors are initialized when comparisons open. */"),
+            ("document.addEventListener('DOMContentLoaded',function(){refreshSelectorsIfNeeded()});",
+             "/* R317: report selectors are initialized by render() and pos712Run() on demand. */"),
+        ]
+        for old,new in replacements:
+            if html.count(old)!=1:raise RuntimeError('R317: unexpected startup anchor: '+old[:90])
+            html=html.replace(old,new,1)
+        assert "if(id==='ownerWalletPage')init();" in html
+        assert "window.pos713CompareInit=init;" in html
+        assert 'window.pos310Installed=true' in html
+        assert 'POS7_RESTORE_PENDING_R305' in html
+    build_tag='r317' if branch=='tab2' else 'r305'
     if branch=='tab2':
         # R308: the on-screen version is generated from the SAME build tag
         # used for Android versionName, instead of the old R215 text.
