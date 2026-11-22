@@ -122,12 +122,13 @@ async function repairLocal(req,verified){
  location.reload();
 }
 async function run(){
- if(busy)return;
+ if(busy){note('الفحص قيد التنفيذ، لم نبدأ عملية إضافية');return;}
+ note('R327: استُقبل الضغط، نتحقق من اتصال المالك وحالة الفاتورة...');
  const cloud=window.P7Cloud;
- if(!cloud?.session)return alert('سجّل دخول مالك متجر سكر زيادة أولًا.');
- if(!navigator.onLine)return alert('الاتصال بالإنترنت ضروري للمطابقة الآمنة.');
- if(window.P7TabletTest?.cashierBusy()||window.P7TabletTest?.isBusy())return alert('أغلق الفاتورة الحالية أولًا.');
- if(!device())return alert('معرّف التاب غير متاح؛ العملية متوقفة');
+ if(!cloud?.session){note('يجب تسجيل الدخول بحساب المالك قبل الإصلاح');return alert('سجّل دخول مالك متجر سكر زيادة أولًا.');}
+ if(!navigator.onLine){note('الاتصال بالإنترنت غير متاح');return alert('الاتصال بالإنترنت ضروري للمطابقة الآمنة.');}
+ if((typeof window.P7TabletTest?.cashierBusy==='function' && window.P7TabletTest.cashierBusy()) || (typeof window.P7TabletTest?.isBusy==='function' && window.P7TabletTest.isBusy()))return alert('أغلق الفاتورة الحالية أولًا.');
+ if(!device()){note('معرّف الناشر المحلي غير متاح');return alert('معرّف التاب غير متاح؛ العملية متوقفة');}
  busy=true;
  try{
   const source=localStorage.getItem(MAIN);
@@ -144,6 +145,7 @@ async function run(){
    if(status?.ok&&status.same_device)return await repairLocal(req,status);
    fail('هناك طلب سابق لم يكتمل التحقق منه؛ أبقينا الحماية. لا تبدأ طلبًا آخر');
   }
+  note('R327: فحص أصناف التاب وإنشاء بيانات المطابقة...');
   const snapshot=await window.pos7BuildOwnerSnapshot(()=>
    !window.P7TabletTest?.cashierBusy());
   if(localStorage.getItem(MAIN)!==source)fail('تغيرت بيانات التاب أثناء إنشاء النسخة');
@@ -155,6 +157,7 @@ async function run(){
    +'سنحفظ نسخة أرشيفية كاملة للسحابة، ولن نحذف بيانات التاب أو نغيّر صلاحيات النشر والجرد.\n'
    +'طلبات جرد الهاتف المتعارضة ستبقى معلقة للمراجعة، دون تطبيقها تلقائيًا.\n'
    +'هذا يغيّر بيانات سحابة المتجر الأول. هل توافق؟';
+  note('R327: اكتمل الفحص المبدئي. انتظر رسالة التأكيد...');
   if(!confirm(prompt))return;
   const request={request_id:crypto.randomUUID(),device:device(),
     expected:Number(rows[0].revision),product_count:productCount};
