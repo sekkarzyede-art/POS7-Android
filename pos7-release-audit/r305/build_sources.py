@@ -110,7 +110,35 @@ state=b.data;persist();toast('تمت استعادة النسخة؛ اعتمد ن
 </script>
 """
         html=html.replace(marker,add_script+marker,1)
-    build_tag='r308' if branch=='tab2' else 'r305'
+        # R309: defer ALL direct home renders during invoice saves, not just
+        # renderHome calls originating in persist(). Durable writes untouched.
+        original=" let depth=0,dirty=false;\n window.pos307MarkHomeDirty=function(){"
+        replacement=""" let depth=0,dirty=false;
+ window.pos309HomeBatchActive=()=>depth>0;
+ const originalHome=window.renderHome;
+ if(typeof originalHome!=='function')throw Error('R309 missing renderHome');
+ const batchedHome=function(){
+   if(depth>0){dirty=true;return;}
+   return originalHome.apply(this,arguments);
+ };
+ window.renderHome=renderHome=batchedHome;
+ window.pos307MarkHomeDirty=function(){"""
+        if html.count(original)!=1:raise RuntimeError('R309: home batching insertion point mismatch')
+        html=html.replace(original,replacement,1)
+        # The existing R185 profiler should count executed renders, not the
+        # suppressed direct renderHome calls during one invoice transaction.
+        profiler="""  var wrapped=function(){
+    if(!active)return original.apply(this,arguments);
+    var start=perf();"""
+        corrected="""  var wrapped=function(){
+    if(!active)return original.apply(this,arguments);
+    if(name==='renderHome' && window.pos309HomeBatchActive?.())return original.apply(this,arguments);
+    var start=perf();"""
+        if html.count(profiler)!=1:raise RuntimeError('R309: profiler insertion point mismatch')
+        html=html.replace(profiler,corrected,1)
+        if 'window.pos309HomeBatchActive=()=>depth>0;' not in html or "if(name==='renderHome' && window.pos309HomeBatchActive?.())" not in html:
+            raise RuntimeError('R309: batching/profile instrumentation missing')
+    build_tag='r309' if branch=='tab2' else 'r305'
     if branch=='tab2':
         # R308: the on-screen version is generated from the SAME build tag
         # used for Android versionName, instead of the old R215 text.
