@@ -367,7 +367,30 @@ function summary(){
         assert "window.pos713CompareInit=init;" in html
         assert 'window.pos310Installed=true' in html
         assert 'POS7_RESTORE_PENDING_R305' in html
-    build_tag='r317' if branch=='tab2' else 'r305'
+    if branch=='tab2':
+        # R318: legacy timers eagerly repaint the home page even when it
+        # is hidden or authorization has not yet restored the active page.
+        # Every actual authorized openPage('home') still runs renderHome.
+        # This change does not modify persist(), balances, receipts or RPCs.
+        anchors=[
+          ("renderCashboxPage();renderHome()},0);",
+           "renderCashboxPage();/* R318: home on authorized page open */},0);"),
+          ("setTimeout(()=>{try{renderHome()}catch(_e){}},40);",
+           "/* R318: remove redundant v133 timed home redraw */"),
+          ("setTimeout(()=>{try{renderHome()}catch(e){};try{if(document.getElementById('reportsHub'))renderReportsHub()}catch(e){}},80);",
+           "setTimeout(()=>{try{if(document.getElementById('reportsHub'))renderReportsHub()}catch(e){}},80);")
+        ]
+        for old,new in anchors:
+            if html.count(old)!=1:raise RuntimeError('R318: startup home timer did not match: '+old[:60])
+            html=html.replace(old,new,1)
+        if "if(id==='home')renderHome();" not in html:
+            raise RuntimeError('R318: missing authorized home render path')
+        if "document.addEventListener('DOMContentLoaded',restoreAuthorizedPage);" not in html:
+            raise RuntimeError('R318: authorized-page restore listener missing')
+        if "window.pos310Installed=true" not in html:
+            raise RuntimeError('R318: purchase durable commit missing')
+
+    build_tag='r318' if branch=='tab2' else 'r305'
     if branch=='tab2':
         # R308: the on-screen version is generated from the SAME build tag
         # used for Android versionName, instead of the old R215 text.
