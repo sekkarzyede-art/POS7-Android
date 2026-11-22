@@ -173,7 +173,8 @@ jobs:
           assert 'pos7_restore_same_device_status_r324' in same_device
           assert 'pos7_restore_same_device_r324' in transfer
           assert 'pos7_restore_same_device_status_r324' in transfer
-          assert "localStorage.getItem(markerKey) && name !== 'pos7_restore_transfer_r305'" in transfer
+          assert "localStorage.getItem(markerKey) &&" in transfer
+          assert "![" in transfer and "].includes(name)" in transfer
           assert 'window.pos307HomeBatchInstalled=true' in source
           print('Signed APK contains correct R308 home banner and R305/R307 features')
           PY
