@@ -6,7 +6,7 @@ const tag='<script id="pos7-r314-boot-profiler">';
 assert.equal(html.split(tag).length,2);
 const source=html.split(tag)[1].split('</script>')[0];
 assert.ok(source.includes('instrumentDOMContentLoaded'));
-assert.ok(html.includes('المتجر الثاني — قاعدة مستقلة • 485.7.229-r317-tab2'));
+assert.ok(html.includes('المتجر الثاني — قاعدة مستقلة • 485.7.229-r318-tab2'));
 assert.ok(html.includes('window.pos310Installed=true'));
 assert.ok(!html.includes('window.pos311SaleActive'));
 let tick=0;
