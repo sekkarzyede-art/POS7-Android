@@ -71,17 +71,6 @@ BEGIN
  OR coalesce(e.v->>'stock_revision','') !~ '^(0|[1-9][0-9]*)$'
  OR e.v->>'stock_revision_untrusted' IS DISTINCT FROM 'false')
  THEN RAISE EXCEPTION 'r325_product_revision_not_rebased'; END IF;
- IF EXISTS(SELECT 1 FROM jsonb_each(p_sections->'products') e(k,v)
- WHERE jsonb_typeof(e.v->'stock_revision') IS DISTINCT FROM 'number'
- OR coalesce(e.v->>'stock_revision','') !~ '^(0|[1-9][0-9]*)
- -- A fresh authoritative revision baseline must be explicit on every row.
- IF EXISTS(SELECT 1 FROM jsonb_each(p_sections->'products') AS e(k,v)
-           WHERE jsonb_typeof(e.v->'stock_revision') IS DISTINCT FROM 'number'
-              OR coalesce(e.v->>'stock_revision','') !~ '^(0|[1-9][0-9]*)
- -- Require explicitly rebased trustworthy revisions, never silently import NULL.
- IF EXISTS(SELECT 1 FROM jsonb_each(p_sections->'products') AS e(k,v)
-           WHERE jsonb_typeof(e.v->'stock_revision') IS DISTINCT FROM 'number'
-              OR coalesce(e.v->>'stock_revision','') !~ '^(0|[1-9][0-9]*)
 
  -- Lock in same order as inventory writer and existing R305 transfer path.
  SELECT * INTO g FROM public.pos7_inventory_gate_r152
@@ -112,11 +101,8 @@ BEGIN
 
  SELECT count(*) INTO pending_count FROM public.pos7_owner_commands
  WHERE store_id='pos7' AND status='pending';
- -- Preserve existing telephone inventory-count requests, including conflicts.
- -- R325 neither approves nor rejects them; the tablet will review them separately.
- -- Stop for unprocessed financial commands, so money cannot be displaced.
  IF EXISTS(SELECT 1 FROM public.pos7_owner_commands
-           WHERE store_id='pos7' AND status='pending' AND event_type<>'inventory_count')
+   WHERE store_id='pos7' AND status='pending' AND event_type<>'inventory_count')
  THEN RAISE EXCEPTION 'r325_pending_financial_phone_commands'; END IF;
 
  LOCK TABLE public.pos7_product_catalog IN SHARE ROW EXCLUSIVE MODE;
@@ -127,7 +113,7 @@ BEGIN
  result_data:=jsonb_build_object('ok',true,'revision',s.revision+1,
    'publisher_device',s.publisher_device,
    'approved_device',g.approved_device,
-   'catalog_count',new_catalog_count,'pending_inventory_commands',pending_count,
+   'catalog_count',new_catalog_count,
    'request_id',p_request_id,'fingerprint',md5(p_sections::text),
    'replayed',false);
  INSERT INTO pos7_transfer_private.same_device_r325_receipts(
