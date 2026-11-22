@@ -295,7 +295,56 @@ window.POS7_BOOT_DIAG_R314.state.suppliers=state.suppliers?Object.keys(state.sup
         assert 'for(var i=0;i<storage.length;i++)keys.push(storage.key(i))' in html
         assert 'window.pos310Installed=true' in html
         assert 'window.pos311SaleActive' not in html
-    build_tag='r315' if branch=='tab2' else 'r305'
+    if branch=='tab2':
+        # R316: stock-center summary is registered on DOMContentLoaded although
+        # its report panel starts hidden. Calculate only when opened (already
+        # wired by pos234's openStockReports wrapper) and use one sales index,
+        # preserving all arithmetic and duplicate-ID/barcode matching semantics.
+        script_start='<script id="pos7-v234-stock-center">'
+        if html.count(script_start)!=1:raise RuntimeError('R316: stock report script not unique')
+        p=html.index(script_start)
+        q=html.index('</script>',p)
+        stock=html[p:q]
+        old="""function summary(){
+ var ps=products(),cost=ps.reduce(function(a,p){return a+stockValue(p)},0),low=ps.filter(function(p){return N(p.stock)<=5}).length;
+ var stale=ps.filter(function(p){var d=lastSaleDate(p);return N(p.stock)>0&&(!d||(Date.now()-d)>15*86400000)}).length;
+ var el=document.getElementById('pos234StockSummary');if(!el)return;"""
+        new="""function buildSaleIndex(){
+ var latest=new Map();
+ (state.sales||[]).forEach(function(inv){
+  if(inv.cancelled)return;
+  var time=new Date(inv.date).getTime();
+  (inv.items||[]).forEach(function(i){
+   ['id:'+String(i.id),'barcode:'+String(i.barcode)].forEach(function(key){
+    var old=latest.get(key);
+    latest.set(key,old===undefined?time:Math.max(old,time));
+   });
+  });
+ });
+ return latest;
+}
+function indexedLastSale(p,latest){
+ var byId=latest.get('id:'+String(p.id)),byBarcode=latest.get('barcode:'+String(p.barcode));
+ if(byId===undefined)return byBarcode===undefined?0:byBarcode;
+ if(byBarcode===undefined)return byId;
+ return Math.max(byId,byBarcode);
+}
+function summary(){
+ var el=document.getElementById('pos234StockSummary');if(!el)return;
+ var ps=products(),cost=ps.reduce(function(a,p){return a+stockValue(p)},0),low=ps.filter(function(p){return N(p.stock)<=5}).length;
+ var latest=buildSaleIndex(),now=Date.now();
+ var stale=ps.filter(function(p){var d=indexedLastSale(p,latest);return N(p.stock)>0&&(!d||(now-d)>15*86400000)}).length;"""
+        if stock.count(old)!=1:raise RuntimeError('R316: summary did not match legacy implementation')
+        stock=stock.replace(old,new,1)
+        ready="document.addEventListener('DOMContentLoaded',summary);"
+        if stock.count(ready)!=1:raise RuntimeError('R316: old eager stock summary registration mismatch')
+        stock=stock.replace(ready,"// R316: report remains lazy; openStockReports invokes summary on demand.",1)
+        if "if(!p.classList.contains('hidden'))summary()" not in stock:
+            raise RuntimeError('R316: lazy report open handler missing')
+        html=html[:p]+stock+html[q:]
+        assert html.count('function buildSaleIndex()')==1
+        assert "document.addEventListener('DOMContentLoaded',summary);" not in html
+    build_tag='r316' if branch=='tab2' else 'r305'
     if branch=='tab2':
         # R308: the on-screen version is generated from the SAME build tag
         # used for Android versionName, instead of the old R215 text.
