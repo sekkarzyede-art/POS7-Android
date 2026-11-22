@@ -36,7 +36,7 @@ D.report=function(){
  longTasksTotalMs:round(D.longTasks.reduce(function(s,x){return s+x.durationMs},0)),
  longestTasks:long.slice(0,15),events:D.events.slice(),cloud:(function(){
  var records=performance.getEntriesByType('resource')||[],numbers=[];
- records.forEach(function(x){if(/\\.supabase\\.co|supabase\\.in/.test(String(x.name||''))){
+ records.forEach(function(x){if(String(x.name||'').includes('.supabase.co')||String(x.name||'').includes('.supabase.in')){
   numbers.push({startMs:round(x.startTime),durationMs:round(x.duration)});
  }});
  return {requestCount:numbers.length,totalResourceMs:round(numbers.reduce(function(a,x){return a+x.durationMs},0)),
