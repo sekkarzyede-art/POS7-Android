@@ -61,5 +61,6 @@ state=b.data;persist();toast('تمت استعادة النسخة؛ اعتمد ن
     target.write_text(html)
     (assets/'restore_transfer.js').write_text(Path('pos7-release-audit/r305/restore_transfer.js').read_text())
     gradle=app/'app/build.gradle'
-    gradle.write_text(re.sub(r"versionName\s+['\"][^'\"]+['\"]",f"versionName '485.7.229-r305-{branch}'",gradle.read_text(),count=1))
+    build_tag='r306' if branch=='tab2' else 'r305'
+    gradle.write_text(re.sub(r"versionName\s+['\"][^'\"]+['\"]",f"versionName '485.7.229-{build_tag}-{branch}'",gradle.read_text(),count=1))
 print('Prepared both operational Android sources with restored-backup transfer entrypoint')
