@@ -61,6 +61,8 @@ jobs:
         run: node pos7-release-audit/r322/native_storage.test.mjs
       - name: Test R325 product key uniqueness and guarded cloud reconciliation
         run: node pos7-release-audit/r325/tab1_safe_rebase.test.mjs
+      - name: Check R325 external JavaScript syntax separately
+        run: node --check r321-android/tab1/POS7_Tablet/app/src/main/assets/r325_safe_rebase.js
       - name: Check HTML JavaScript syntax
         run: |
           python3 - <<'PY2'
@@ -129,8 +131,10 @@ jobs:
           assert source.count('id="pos7-r321-tab1-quota-recovery"')==1
           assert source.count('id="pos7-r322-native-state-storage"')==1
           assert source.count('id="pos7-r325-safe-sync"')==1
-          assert 'pos7_restore_same_device_r325' in source
-          assert 'pos7_restore_same_device_status_r325' in source
+          with zipfile.ZipFile(apk) as z: external=z.read('assets/r325_safe_rebase.js').decode('utf8')
+          assert 'pos7_restore_same_device_r325' in external
+          assert 'pos7_restore_same_device_status_r325' in external
+          assert 'pos7-r325-safe-sync' in source
           assert 'nativeRead()' in source
           assert 'pos322WriteState(next)' in source
           assert 'POS7_R174_SMART_CAS_SERVER_VERIFIED' in source
