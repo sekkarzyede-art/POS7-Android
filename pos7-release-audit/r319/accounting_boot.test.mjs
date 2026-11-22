@@ -28,7 +28,7 @@ function run105(initial){
    state,window:null,console,Date,Math,JSON,Set,
    nv:x=>Number(x||0),persist:()=>{saves++;},
    mcPost:(parts,sign,ref,title,party,date)=>{posted.push({parts,sign,ref,title,party,date});},
-   saveSupplierPayment:()=>{},savePurchase:()=>{},
+   saveSupplierPayment:()=>{},savePurchase:()=>{},cancelPurchaseEdit:()=>{},
    renderSupplierStatement:()=>{},cashboxRows:()=>[]
  };
  ctx.window=ctx;
