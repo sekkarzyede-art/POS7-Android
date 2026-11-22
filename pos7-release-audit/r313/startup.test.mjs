@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
+import zlib from 'node:zlib';
 import assert from 'node:assert/strict';
 
 const html=fs.readFileSync('r305-android/tab2/POS7_Tablet/app/src/main/assets/index.html','utf8');
@@ -44,8 +45,8 @@ const context={
  document:{addEventListener:(name,fn)=>events[name]=fn},
  addEventListener:(name,fn)=>events[name]=fn,
  pako:{
-  deflate:(value)=>new TextEncoder().encode(value),
-  inflate:(bytes)=>new TextDecoder().decode(bytes)
+  deflate:(value)=>new Uint8Array(zlib.deflateSync(value)),
+  inflate:(bytes)=>zlib.inflateSync(bytes).toString('utf8')
  },
  TextEncoder,TextDecoder,Uint8Array,
  btoa:(s)=>Buffer.from(s,'latin1').toString('base64'),
@@ -61,6 +62,7 @@ assert.deepEqual(JSON.parse(localStorage.getItem('HISTORICAL_BACKUP')).products.
 assert.equal(localStorage.getItem('HISTORICAL_BACKUP'),JSON.stringify(historical));
 localStorage.setItem('NEW_KEY',JSON.stringify(historical));
 assert.equal(writes,1,'new write still persists normally');
+assert.ok(localStorage.data.get('NEW_KEY').startsWith('__POS7_LOCAL_JSON_DEFLATE_V1__'),'new writes remain compressed');
 assert.equal(localStorage.getItem('NEW_KEY'),JSON.stringify(historical));
 assert.equal(localStorage.data.get('HISTORICAL_BACKUP'),JSON.stringify(historical),'untouched backup stays unchanged');
 console.log('R313 PASS: no eager rewrites, legacy JSON reads intact, compressed write readable, timing and R310/R312 retained');
