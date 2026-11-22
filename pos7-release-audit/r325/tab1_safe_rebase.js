@@ -140,10 +140,22 @@ async function run(){
   let req=existing;
   if(req){
    if(req.device!==device()||!req.request_id)fail('طلب سابق غير متطابق');
-   note('التحقق من طلب المطابقة السابق أولًا...');
+   note('R328: فحص المحاولة السابقة قبل أي إجراء...');
    const status=await cloud.rpc('pos7_restore_same_device_status_r325',{p_request_id:req.request_id});
    if(status?.ok&&status.same_device)return await repairLocal(req,status);
-   fail('هناك طلب سابق لم يكتمل التحقق منه؛ أبقينا الحماية. لا تبدأ طلبًا آخر');
+   // A PostgreSQL statement_timeout rolls back the whole transaction, including
+   // its archive receipt. Retry is only possible when the server confirms the
+   // receipt is missing AND the cloud revision remains exactly the old value.
+   if(status?.reason==='receipt_missing' &&
+      Number(rows[0].revision)===Number(req.expected)){
+     localStorage.removeItem(PENDING);
+     if(localStorage.getItem(PENDING)!==null)
+       fail('تعذر إلغاء رمز المحاولة الملغاة؛ لم نبدأ محاولة جديدة');
+     note('R328: لم تُنفذ المحاولة السابقة؛ نجهز موافقة جديدة دون تغيير بيانات التاب...');
+     req=null;
+   }else{
+     fail('لا يمكن تأكيد إلغاء المحاولة السابقة أو تغيّرت مراجعة السحابة؛ أوقفنا النشر حماية للبيانات');
+   }
   }
   note('R327: فحص أصناف التاب وإنشاء بيانات المطابقة...');
   const snapshot=await window.pos7BuildOwnerSnapshot(()=>
