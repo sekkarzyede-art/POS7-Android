@@ -42,13 +42,14 @@ async function simulate(options={}){
    name:p.name,barcode:p.barcode,stock:p.stock,
    stock_revision:p.stock_revision,stock_revision_untrusted:p.stock_revision_untrusted
  });
- let verifies=0,reloaded=false;
+ let verifies=0,reloaded=false,cloudSections=null;
  const cloud={session:{access_token:'token'},
-  async req(){calls.push('read');return [{publisher_device:options.wrongDevice?'another': 'trusted-device-1',revision:3719}]},
+  async req(url){calls.push('read');if(url.includes('select=sections,revision'))return [{sections:cloudSections,revision:3720}];return [{publisher_device:options.wrongDevice?'another': 'trusted-device-1',revision:3719}]},
   async rpc(name,args){
    calls.push(name);
    if(options.offline)throw Error('connection failed');
    if(name==='pos7_restore_same_device_r325'){
+     cloudSections=JSON.parse(JSON.stringify(args.p_sections));
      assert.equal(Object.keys(args.p_sections.products).length,3);
      for(const item of Object.values(args.p_sections.products)){
        assert.equal(item.stock_revision_untrusted,false);
