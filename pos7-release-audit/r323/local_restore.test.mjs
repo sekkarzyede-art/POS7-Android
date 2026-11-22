@@ -7,8 +7,8 @@ const js=fs.readFileSync('r305-android/tab2/POS7_Tablet/app/src/main/assets/loca
 const old=fs.readFileSync('r305-android/tab2/POS7_Tablet/app/src/main/assets/restore_transfer.js','utf8');
 const gradle=fs.readFileSync('r305-android/tab2/POS7_Tablet/app/build.gradle','utf8');
 assert.ok(html.includes('<script src="local_restore_r323.js"></script>'));
-assert.ok(html.includes('المتجر الثاني — قاعدة مستقلة • 485.7.229-r323-tab2'));
-assert.ok(gradle.includes("versionName '485.7.229-r323-tab2'"));
+assert.ok(html.includes('المتجر الثاني — قاعدة مستقلة • 485.7.229-r324-tab2'));
+assert.ok(gradle.includes("versionName '485.7.229-r324-tab2'"));
 assert.ok(old.includes("if (localStorage.getItem(markerKey) && name !== 'pos7_restore_transfer_r305')"));
 assert.ok(old.includes("if (!confirm('سيعتمد هذا المتجر بيانات النسخة المستعادة"));
 assert.ok(js.includes("localStorage.setItem(LOCAL,'yes')"));
