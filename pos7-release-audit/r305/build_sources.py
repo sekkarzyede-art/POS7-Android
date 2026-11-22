@@ -250,6 +250,7 @@ state=b.data;persist();toast('تمت استعادة النسخة؛ اعتمد ن
         # R314 diagnostic only: do not carry over R313 compression changes.
         # Initial timing bootstrap executes before the app's parser scripts.
         boot=Path('pos7-release-audit/r314/boot_diag.js').read_text()
+        assert 'instrumentDOMContentLoaded' in boot and 'D.domListeners' in boot
         if '<head>' not in html[:200]:raise RuntimeError('R314: real document head not found')
         html=html.replace('<head>','<head><script id="pos7-r314-boot-profiler">'+boot+'</script>',1)
         load_start="<script>\nconst KEY='POS7_TRIAL188_CLEAN';"
@@ -294,7 +295,7 @@ window.POS7_BOOT_DIAG_R314.state.suppliers=state.suppliers?Object.keys(state.sup
         assert 'for(var i=0;i<storage.length;i++)keys.push(storage.key(i))' in html
         assert 'window.pos310Installed=true' in html
         assert 'window.pos311SaleActive' not in html
-    build_tag='r314' if branch=='tab2' else 'r305'
+    build_tag='r315' if branch=='tab2' else 'r305'
     if branch=='tab2':
         # R308: the on-screen version is generated from the SAME build tag
         # used for Android versionName, instead of the old R215 text.
