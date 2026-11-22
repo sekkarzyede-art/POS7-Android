@@ -1,0 +1,133 @@
+name: POS7 Store2 R288 Safe Save Performance Trial
+on:
+  push:
+    branches: [pos7-store2-speed-r288]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - uses: android-actions/setup-android@v4
+      - run: sdkmanager --install 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Extract genuine Store2 R215 project and apply minimal R288 fix
+        run: |
+          python3 - <<'PY'
+          import zipfile,pathlib,re
+          z=zipfile.ZipFile('POS7_المتجر_الثاني_TAB_R215_Android_Source.zip')
+          dest=pathlib.Path('android-project').resolve()
+          for member in z.infolist():
+              if not (dest/member.filename).resolve().is_relative_to(dest):raise SystemExit('Unsafe archive member')
+          z.extractall(dest)
+          app=dest/'POS7_Tablet'
+          html=app/'app/src/main/assets/index.html'
+          gradle=app/'app/build.gradle'
+          h=html.read_text(encoding='utf-8')
+          g=gradle.read_text(encoding='utf-8')
+          required=['pos7_store2_first_tablet_r215','POS7_STORE2_R215','pos7_inventory_commit_r155','POS7_R174_SMART_CAS_SERVER_VERIFIED']
+          for marker in required:
+              if marker not in h:raise SystemExit('R215 source mismatch: '+marker)
+          old='window.pako.deflate(value);'
+          if h.count(old)!=1:raise SystemExit('R288 safety stop: unexpected compression path count '+str(h.count(old)))
+          h=h.replace(old,'window.pako.deflate(value,{level:1}); /* R288: lossless faster compression, same persisted format */',1)
+          # Remove only the known duplicate diagnostic serialization, not the durable write.
+          oldblock="""  var pos185SerializationStart=(window.pos185Diag && window.pos185Diag.active)?performance.now():-1;
+          var pos185Serialized=JSON.stringify(state);
+          if(pos185SerializationStart>=0)window.pos185Diag.part('تحويل قاعدة المتجر إلى JSON',performance.now()-pos185SerializationStart);
+          """
+          if h.count(oldblock)!=1:raise SystemExit('R288 safety stop: duplicate-serialization source not matched')
+          h=h.replace(oldblock,'  // R288: removed the redundant diagnostic-only JSON.stringify.\n  ',1)
+          # The actual revision stamping and synchronous durable save remain unchanged.
+          if 'pos7R100PrepareStockRevisions();' not in h or 'localStorage.setItem(KEY,JSON.stringify(state));' not in h:
+              raise SystemExit('R288 safety stop: durable stock revision write changed')
+          orig="versionName '485.7.229-r215-store2'"
+          if g.count(orig)!=1:raise SystemExit('R215 Gradle version name mismatch')
+          g=g.replace(orig,"versionName '485.7.229-r288-store2'")
+          html.write_text(h,encoding='utf-8')
+          gradle.write_text(g,encoding='utf-8')
+          print('R288 minimal patch applied to real R215 store2 source; cloud, CAS, and inventory logic left untouched')
+          PY
+      - name: Validate all inline JS and Android Gradle inputs
+        run: |
+          python3 - <<'PY'
+          import pathlib,subprocess
+          from html.parser import HTMLParser
+          class P(HTMLParser):
+              def __init__(self):super().__init__();self.active=False;self.s=[]
+              def handle_starttag(self,t,a):
+                  if t=='script':
+                      self.active=True;self.s.append('')
+              def handle_endtag(self,t):
+                  if t=='script':self.active=False
+              def handle_data(self,d):
+                  if self.active:self.s[-1]+=d
+          p=P();p.feed(pathlib.Path('android-project/POS7_Tablet/app/src/main/assets/index.html').read_text())
+          for i,s in enumerate(p.s):
+              if s.strip():
+                  r=subprocess.run(['node','--check'],input=s,text=True,capture_output=True)
+                  if r.returncode:raise SystemExit(f'Invalid script {i}: {r.stderr}')
+          print('Passed JS syntax checks:',len(p.s))
+          PY
+      - name: Set safe upgrade version code
+        run: |
+          python3 - <<'PY'
+          import os
+          code=2000000000+int(os.environ['GITHUB_RUN_NUMBER'])
+          if code>2100000000:raise SystemExit('Bad version code')
+          with open(os.environ['GITHUB_ENV'],'a') as f:f.write(f'POS7_VERSION_CODE={code}\n')
+          print('versionCode=',code)
+          PY
+      - name: Verify original tablet signing certificate
+        env:
+          POS7_KEYSTORE_BASE64: ${{ secrets.POS7_KEYSTORE_BASE64 }}
+          POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
+          POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
+          POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for k in POS7_KEYSTORE_BASE64 POS7_KEYSTORE_PASSWORD POS7_KEY_ALIAS POS7_KEY_PASSWORD; do test -n "${!k:-}" || { echo "Missing $k"; exit 1; }; done
+          umask 077
+          printf '%s' "$POS7_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/pos7-tablet-release.jks"
+          actual=$(keytool -exportcert -keystore "$RUNNER_TEMP/pos7-tablet-release.jks" -storepass:env POS7_KEYSTORE_PASSWORD -alias "$POS7_KEY_ALIAS" | sha256sum | awk '{print $1}')
+          expected='843ed618b18ec7a0cbb50f38984374540da016c41a8df8042bb8db19964d4495'
+          test "$actual" = "$expected" || { echo 'Signing certificate mismatch'; exit 1; }
+          echo "POS7_KEYSTORE_PATH=$RUNNER_TEMP/pos7-tablet-release.jks" >> "$GITHUB_ENV"
+          echo "POS7_SIGNING_CERT_SHA256=$actual" >> "$GITHUB_ENV"
+      - name: Build release APK for Store2 only
+        working-directory: android-project/POS7_Tablet
+        env:
+          POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
+          POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
+          POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
+        run: gradle --no-daemon clean assembleRelease
+      - name: Verify APK package and original signer
+        run: |
+          set -euo pipefail
+          apk=android-project/POS7_Tablet/app/build/outputs/apk/release/app-release.apk
+          sdk="$ANDROID_HOME/build-tools/35.0.0"
+          "$sdk/apksigner" verify --verbose "$apk"
+          "$sdk/aapt" dump badging "$apk" | grep -F "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.229-r288-store2'"
+          actual=$("$sdk/apksigner" verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2}' | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')
+          test "$actual" = "$POS7_SIGNING_CERT_SHA256"
+          mkdir -p output
+          cp "$apk" output/POS7_Store2_R288_SaveSpeed.apk
+          sha256sum output/*.apk > output/SHA256SUMS.txt
+          printf 'Source=Store2 R215\nPatch=R288 lossless level-1 compression + remove redundant diagnostic JSON serialization\nVersionCode=%s\n' "$POS7_VERSION_CODE" > output/BUILD_INFO.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: POS7-Store2-R288-SaveSpeed-${{ env.POS7_VERSION_CODE }}
+          path: output/
+          if-no-files-found: error
+      - name: Remove temporary signing materials
+        if: always()
+        run: rm -f "$RUNNER_TEMP/pos7-tablet-release.jks"
