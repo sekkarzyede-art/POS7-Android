@@ -16,5 +16,5 @@ assert.ok(html.includes("window.__v250RawOpen(page);else home()"),'restored page
 assert.ok(html.includes('window.pos310Installed=true'),'purchase durable write path unchanged');
 assert.ok(!html.includes('window.pos311SaleActive'),'unstable sale batching is still absent');
 assert.ok(html.includes('POS7_RESTORE_PENDING_R305'),'restore pending guard intact');
-assert.ok(html.includes('المتجر الثاني — قاعدة مستقلة • 485.7.229-r319-tab2'),'new release identity present');
+assert.ok(html.includes('المتجر الثاني — قاعدة مستقلة • 485.7.229-r320-tab2'),'new release identity present');
 console.log('R318 PASS: obsolete eager home timers removed, auth navigation and accounting safeguards retained');
