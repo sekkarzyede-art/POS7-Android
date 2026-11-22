@@ -60,5 +60,5 @@ assert.ok(reports.includes("window.pos712Run=function(type){custom={type:type};w
 assert.ok(h.includes('POS7_RESTORE_PENDING_R305'),'backup restore guard preserved');
 assert.ok(h.includes('window.pos310Installed=true'),'purchase single-commit preserved');
 assert.ok(!h.includes('window.pos311SaleActive'),'unsafe sale path remains absent');
-assert.ok(h.includes('485.7.229-r323-tab2'));
+assert.ok(h.includes('485.7.229-r324-tab2'));
 console.log('R317 PASS: hidden panels lazy, authorized navigation and ledger paths preserved');
