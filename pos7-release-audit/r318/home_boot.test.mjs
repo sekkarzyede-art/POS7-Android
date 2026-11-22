@@ -11,7 +11,7 @@ for(const x of notPresent)assert.ok(!html.includes(x),'old eager home timer stil
 assert.ok(html.includes('renderCashboxPage();/* R318: home on authorized page open */},0);'),'cashbox initializer stays intact');
 assert.ok(html.includes("setTimeout(()=>{try{if(document.getElementById('reportsHub'))renderReportsHub()}catch(e){}},80);"),'reportsHub initialization retained');
 assert.ok(html.includes("if(id==='home')renderHome();"),'home always renders on actual home open');
-assert.ok(html.includes("document.addEventListener("DOMContentLoaded",restoreAuthorizedPage);"),'authorized startup routing is intact');
+assert.ok(html.includes('document.addEventListener("DOMContentLoaded",restoreAuthorizedPage);'),'authorized startup routing is intact');
 assert.ok(html.includes("window.__v250RawOpen(page);else home()"),'restored page router remains intact');
 assert.ok(html.includes('window.pos310Installed=true'),'purchase durable write path unchanged');
 assert.ok(!html.includes('window.pos311SaleActive'),'unstable sale batching is still absent');
