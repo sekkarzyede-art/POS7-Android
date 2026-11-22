@@ -275,7 +275,7 @@ state=b.data;persist();toast('تمت استعادة النسخة؛ اعتمد ن
         ready_new="ready=true;window.POS7_SPLASH_TIMING.uiReadyAt=performance.now();window.POS7_BOOT_DIAG_R314.mark('uiReady');finish();"
         if html.count(ready_old)!=1:raise RuntimeError('R314: splash UI ready anchor missing')
         html=html.replace(ready_old,ready_new,1)
-        end="<script src=\\"restore_transfer.js\\"></script>"
+        end='<script src="restore_transfer.js"></script>'
         if html.count(end)!=1:raise RuntimeError('R314: restore transfer script anchor missing')
         html=html.replace(end,"<script id='pos7-r314-functions-hook'>window.pos314HookFunctions();window.POS7_BOOT_DIAG_R314.mark('scriptsRegistered');</script>\n"+end,1)
         # Diagnostics are only aggregate counts and durations; don't save
