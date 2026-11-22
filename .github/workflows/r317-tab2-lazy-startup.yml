@@ -149,13 +149,13 @@ jobs:
           assert 'window.pos307HomeBatchInstalled=true' in source
           print('Signed APK contains correct R308 home banner and R305/R307 features')
           PY
-          "$sdk/aapt" dump badging "$apk" | grep -F "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.229-r316-${{ matrix.branch }}'"
+          "$sdk/aapt" dump badging "$apk" | grep -F "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.229-r317-${{ matrix.branch }}'"
           actual=$("$sdk/apksigner" verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2}' | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')
           test "$actual" = "$POS7_SIGNING_CERT_SHA256"
           mkdir -p output
           cp "$apk" output/POS7_Tablet_R317_${{ matrix.branch }}.apk
           sha256sum output/*.apk > output/SHA256SUMS.txt
-          printf 'versionName=485.7.229-r316-${{ matrix.branch }}\nversionCode=%s\n' "$POS7_VERSION_CODE" > output/build-info.txt
+          printf 'versionName=485.7.229-r317-${{ matrix.branch }}\nversionCode=%s\n' "$POS7_VERSION_CODE" > output/build-info.txt
       - uses: actions/upload-artifact@v4
         with:
           name: POS7-Tablet-R317-${{ matrix.branch }}-${{ env.POS7_VERSION_CODE }}
