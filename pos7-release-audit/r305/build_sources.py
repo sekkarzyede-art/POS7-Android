@@ -110,11 +110,12 @@ state=b.data;persist();toast('تمت استعادة النسخة؛ اعتمد ن
 </script>
 """
         html=html.replace(marker,add_script+marker,1)
+    build_tag='r308' if branch=='tab2' else 'r305'
     if branch=='tab2':
         # R308: the on-screen version is generated from the SAME build tag
         # used for Android versionName, instead of the old R215 text.
         # R215 RPC/function names remain untouched; those are protocol IDs.
-        build_version='485.7.229-r308-tab2'
+        build_version=f'485.7.229-{build_tag}-{branch}'
         banner=r'(<div id="pos7-store2-r215-banner" dir="rtl">)([^<]*)(</div>)'
         html,count=re.subn(banner,lambda m:m.group(1)+'المتجر الثاني — قاعدة مستقلة • '+build_version+m.group(3),html,count=1)
         if count!=1:raise RuntimeError('R308: failed to locate exact home version banner')
@@ -123,6 +124,5 @@ state=b.data;persist();toast('تمت استعادة النسخة؛ اعتمد ن
     target.write_text(html)
     (assets/'restore_transfer.js').write_text(Path('pos7-release-audit/r305/restore_transfer.js').read_text())
     gradle=app/'app/build.gradle'
-    build_tag='r308' if branch=='tab2' else 'r305'
     gradle.write_text(re.sub(r"versionName\s+['\"][^'\"]+['\"]",f"versionName '485.7.229-{build_tag}-{branch}'",gradle.read_text(),count=1))
 print('Prepared both operational Android sources with restored-backup transfer entrypoint')
