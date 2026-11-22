@@ -9,7 +9,10 @@ const gradle=fs.readFileSync('r305-android/tab2/POS7_Tablet/app/build.gradle','u
 assert.ok(html.includes('<script src="local_restore_r323.js"></script>'));
 assert.ok(html.includes('المتجر الثاني — قاعدة مستقلة • 485.7.229-r324-tab2'));
 assert.ok(gradle.includes("versionName '485.7.229-r324-tab2'"));
-assert.ok(old.includes("if (localStorage.getItem(markerKey) && name !== 'pos7_restore_transfer_r305')"));
+assert.ok(old.includes('if (localStorage.getItem(markerKey) &&'));
+assert.ok(old.includes('pos7_restore_transfer_r305'));
+assert.ok(old.includes('pos7_restore_same_device_r324'));
+assert.ok(old.includes('pos7_restore_same_device_status_r324'));
 assert.ok(old.includes("if (!confirm('سيعتمد هذا المتجر بيانات النسخة المستعادة"));
 assert.ok(js.includes("localStorage.setItem(LOCAL,'yes')"));
 assert.ok(!js.includes('removeItem(RESTORE)'));
