@@ -246,7 +246,7 @@ state=b.data;persist();toast('تمت استعادة النسخة؛ اعتمد ن
         assert html.count('id="pos7-r310-purchase-single-commit"')==1
         assert 'POS7_RESTORE_PENDING_R305' in html
         assert 'window.pos309HomeBatchActive' in html
-    build_tag='r310' if branch=='tab2' else 'r305'
+    build_tag='r312' if branch=='tab2' else 'r305'
     if branch=='tab2':
         # R308: the on-screen version is generated from the SAME build tag
         # used for Android versionName, instead of the old R215 text.
@@ -257,6 +257,14 @@ state=b.data;persist();toast('تمت استعادة النسخة؛ اعتمد ن
         if count!=1:raise RuntimeError('R308: failed to locate exact home version banner')
         if not html.count('المتجر الثاني — قاعدة مستقلة • '+build_version)==1:
             raise RuntimeError('R308: home version banner is not unique')
+    if branch=='tab2':
+        # R312 emergency: R311 sale batching caused false failure after the
+        # receipt was already displayed. Restore the R310 sale transaction path.
+        # R310 purchase single-commit, R305 transfer and R309 UI speed remain.
+        assert 'id="pos7-r310-purchase-single-commit"' in html
+        assert 'id="pos7-r311-sale-single-commit"' not in html
+        assert 'window.pos311SaleActive' not in html
+        assert "pos7R102SaveStateDirect();" in html
     target.write_text(html)
     (assets/'restore_transfer.js').write_text(Path('pos7-release-audit/r305/restore_transfer.js').read_text())
     gradle=app/'app/build.gradle'
