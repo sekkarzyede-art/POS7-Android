@@ -26,6 +26,11 @@ jobs:
               Path('output').mkdir(exist_ok=True)
               Path('output/tab1_index.html').write_bytes(z.read(html[0]))
               Path('output/tab1_build.gradle').write_bytes(z.read(gradle[0]))
+              native=[n for n in names if n.endswith(('.kt','.java')) and ('app/src/main/' in n)]
+              for i,n in enumerate(native):
+                  Path('output/tab1_native_'+str(i)+Path(n).suffix).write_bytes(z.read(n))
+              Path('output/native-paths.json').write_text(json.dumps(native,ensure_ascii=False))
+              print('native files:',native)
               s=z.read(html[0]).decode('utf8')
               print(json.dumps({'source_zip':source,'archive_html_path':html[0],'html_bytes':len(s.encode('utf8')),
                    'localstore_compression':s.count('pos7-localstorage-compression-v1'),
