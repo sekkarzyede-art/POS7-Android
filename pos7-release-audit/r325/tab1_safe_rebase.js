@@ -66,25 +66,44 @@ function patchMetadata(raw,planned){
  }
  return JSON.stringify(data);
 }
+function canon(x){
+ if(Array.isArray(x))return x.map(canon);
+ if(x&&typeof x==='object'){
+  const out={};for(const k of Object.keys(x).sort())if(x[k]!==undefined)out[k]=canon(x[k]);
+  return out;
+ }
+ return x;
+}
+function comparableSections(s){
+ const out=JSON.parse(JSON.stringify(s));
+ if(out.meta&&typeof out.meta==='object')delete out.meta.generatedAt;
+ return JSON.stringify(canon(out));
+}
 async function repairLocal(req,verified){
  const raw=localStorage.getItem(MAIN);
  if(!raw)fail('تعذر قراءة قاعدة التاب بعد النشر');
- const sections=JSON.parse(req.sections_json);
+ const current=await window.pos7BuildOwnerSnapshot(()=>
+   !window.P7TabletTest?.cashierBusy());
+ if(localStorage.getItem(MAIN)!==raw)fail('تغيرت قاعدة التاب أثناء التحقق');
+ const sections=JSON.parse(JSON.stringify(current.sections));
  const {planned,productCount}=plansFromSnapshot(raw,sections);
  if(productCount!==req.product_count)fail('تغير عدد الأصناف قبل الحفظ المحلي');
- if(JSON.stringify(sections)!==req.sections_json)fail('تغيرت بيانات الأصناف قبل إنهاء المطابقة');
  if(!verified?.ok||!verified.same_device||
     verified.fingerprint!==verified.expected_fingerprint||
     Number(verified.catalog_count)!==productCount)
    fail('لم يثبت تطابق السحابة مع بيانات التاب');
+ const cloud=await window.P7Cloud.req('/rest/v1/pos7_owner_snapshot?store_id=eq.pos7&select=sections,revision');
+ if(!Array.isArray(cloud)||cloud.length!==1||
+    Number(cloud[0].revision)!==Number(verified.revision)||
+    comparableSections(cloud[0].sections)!==comparableSections(sections))
+   fail('حالة السحابة بعد النشر لا تطابق النسخة المحلية؛ أبقينا الحماية');
+ if(localStorage.getItem(MAIN)!==raw)fail('حدثت تغييرات محلية أثناء التحقق النهائي');
  const updated=patchMetadata(raw,planned);
  if(updated!==raw){
   localStorage.setItem(MAIN,updated);
   if(localStorage.getItem(MAIN)!==updated)
     fail('فشلت قراءة التحديث المحلي بعد الحفظ؛ المزامنة ما زالت محجوبة');
  }
- // In-memory bookkeeping is refreshed after a durable successful write.
- // No quantities, accounting entries or invoice records changed.
  const memory=(typeof state!=='undefined'&&state?.products)||null;
  if(memory&&memory.length===planned.length){
   for(const p of planned)if(p.requiresRepair){
@@ -97,7 +116,7 @@ async function repairLocal(req,verified){
  localStorage.setItem(VERIFIED,'yes');
  if(localStorage.getItem(VERIFIED)!=='yes')fail('تعذر حفظ تحقق حماية R174');
  localStorage.removeItem(PENDING);
- alert('R325: تمّت مطابقة سحابة سكر زيادة مع التاب 1 مع حماية الجرد.\n'
+ alert('R325: تمت مطابقة سحابة سكر زيادة مع التاب 1 مع حماية الجرد.\n'
  +'النسخة السحابية القديمة مؤرشفة؛ لم تتغير كميات التاب ولا الفواتير أو الصناديق.\n'
  +'طلب جرد الهاتف المعلّق بقي للمراجعة، ولم ننقل صلاحيات النشر.');
  location.reload();
@@ -138,8 +157,7 @@ async function run(){
    +'هذا يغيّر بيانات سحابة المتجر الأول. هل توافق؟';
   if(!confirm(prompt))return;
   const request={request_id:crypto.randomUUID(),device:device(),
-    expected:Number(rows[0].revision),product_count:productCount,
-    sections_json:JSON.stringify(sections)};
+    expected:Number(rows[0].revision),product_count:productCount};
   if(!Number.isSafeInteger(request.expected))fail('مراجعة السحابة غير صحيحة');
   // Persist the EXACT remote payload before any remote action for idempotent retry.
   localStorage.setItem(PENDING,JSON.stringify(request));
