@@ -106,6 +106,13 @@ for n in blocks:
     assert 'POS7_R174_SMART_CAS_SERVER_VERIFIED' in context['html']
     print('Ported TAB2 performance:',selected[n.lineno])
 html=context['html']
+# R306's redundant R185 serialization was arranged differently by the Tab1
+# safe-storage patch. Keep its measurement variable, but avoid serializing
+# the ENTIRE state a second time for diagnostics.
+diagnostic='var pos185Serialized=JSON.stringify(state);'
+if html.count(diagnostic)!=1:
+    raise RuntimeError('R334: duplicate diagnostic JSON stringify moved unexpectedly')
+html=html.replace(diagnostic,'var pos185Serialized=""; /* R334: avoid repeated full-state JSON stringification for diagnostics */',1)
 
 # R319: conditional accounting startup persistence; reuse exact, tested
 # transforms from R319, omitting its Store2 version banner and path edits.
