@@ -63,6 +63,7 @@ r319=Path('pos7-release-audit/r319/optimize_boot.py').read_text(encoding='utf8')
 r319=r319.replace('root=Path("r305-android/tab2/POS7_Tablet")',
                   "root=Path('r321-android/tab1/POS7_Tablet')")
 r319=r319[:r319.index('# Create only a new version;')]
+r319=r319.replace('html=assets.read_text(encoding="utf-8")','html=html')
 assert 'pos319RepairDirty' in r319 and 'pos319ForeignKeys' in r319
 exec(compile(r319,'<R319-performance>',mode='exec'),{'__builtins__':__builtins__},locals())
 # Use the transformed html variable from the executed source.
