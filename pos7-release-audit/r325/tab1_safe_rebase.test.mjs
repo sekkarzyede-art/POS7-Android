@@ -63,7 +63,7 @@ async function simulate(options={}){
    }
    if(name==='pos7_restore_same_device_status_r325'){
      verifies++;
-     if(options.existingRequest)return {ok:false,reason:options.ambiguousReceipt?'network_unknown':'receipt_missing'};
+     if(options.existingRequest && args.p_request_id==='22222222-2222-4222-8222-222222222222')return {ok:false,reason:options.ambiguousReceipt?'network_unknown':'receipt_missing'};
      return {ok:options.verify!==false,same_device:true,fingerprint:'match',
        expected_fingerprint:'match',catalog_count:3,revision:3720};
    }
