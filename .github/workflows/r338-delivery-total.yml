@@ -1,8 +1,8 @@
 
-name: Build POS7 R338 Delivery Total
+name: Build POS7 R339 WhatsApp Customer
 on:
   push:
-    branches: [pos7-tab1-r338-delivery-total]
+    branches: [pos7-tab1-r339-whatsapp-customer]
   workflow_dispatch:
     inputs:
       installed_version_code:
@@ -112,7 +112,13 @@ jobs:
           patch --fuzz=0 "$app/src/main/assets/index.html" < pos7-release-audit/r336/tile.patch
           python3 pos7-release-audit/r337/share.py "$app/src/main"
           sed -i 's/عليكم مبلغ/المجموع النهائي/g' "$app/src/main/assets/index.html"
-          sed -i 's/485.7.229-r334-tab1/485.7.229-r338-tab1/g' "$app/build.gradle"
+          sed -i 's/485.7.229-r334-tab1/485.7.229-r339-tab1/g' "$app/build.gradle"
+      - name: Apply R339 image-only WhatsApp red customer name
+        run: |
+          app=r321-android/tab1/POS7_Tablet/app
+          echo 'f38e9c5be423d8da483b817547cec3d9347e1500f2c111bd797167a899cc2dd4  '"$app/src/main/assets/index.html" | sha256sum -c -
+          python3 pos7-release-audit/r339/patch_whatsapp_customer.py "$app/src/main/assets/index.html"
+          echo '84749c23f0442841637ee8328d132293188087a9bb24ed2b97148659e4441022  '"$app/src/main/assets/index.html" | sha256sum -c -
       - name: Set upgrade versionCode
         env:
           INSTALLED_CODE: ${{ inputs.installed_version_code }}
@@ -121,7 +127,7 @@ jobs:
           import os
           raw=os.getenv('INSTALLED_CODE','').strip()
           if raw and (not raw.isascii() or not raw.isdecimal()):raise SystemExit('Invalid installed code')
-          code=max(2001038000+int(os.environ['GITHUB_RUN_NUMBER']),int(raw)+1 if raw else 0)
+          code=max(2001039000+int(os.environ['GITHUB_RUN_NUMBER']),int(raw)+1 if raw else 0)
           if code>2100000000:raise SystemExit('versionCode exceeds Android limit')
           with open(os.environ['GITHUB_ENV'],'a') as f:f.write(f'POS7_VERSION_CODE={code}\n')
           print('New tablet versionCode:',code)
@@ -154,7 +160,7 @@ jobs:
           set -euo pipefail
           apk=r321-android/tab1/POS7_Tablet/app/build/outputs/apk/release/app-release.apk
           sdk="$ANDROID_HOME/build-tools/35.0.0"
-          test "$(unzip -p "$apk" assets/index.html | sha256sum | cut -d' ' -f1)" = 'f38e9c5be423d8da483b817547cec3d9347e1500f2c111bd797167a899cc2dd4'
+          test "$(unzip -p "$apk" assets/index.html | sha256sum | cut -d' ' -f1)" = '84749c23f0442841637ee8328d132293188087a9bb24ed2b97148659e4441022'
           "$sdk/apksigner" verify --verbose "$apk"
           python3 - <<'PY'
           import zipfile
@@ -190,16 +196,16 @@ jobs:
           assert 'POS7_TRIAL188_CLEAN' in source
           print('R321 signed APK contains verified tab1 quota recovery')
           PY
-          "$sdk/aapt" dump badging "$apk" | grep -F "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.229-r338-tab1'"
+          "$sdk/aapt" dump badging "$apk" | grep -F "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.229-r339-tab1'"
           actual=$("$sdk/apksigner" verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2}' | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')
           test "$actual" = "$POS7_SIGNING_CERT_SHA256"
           mkdir -p output
-          cp "$apk" output/POS7_Tablet_R338_tab1.apk
+          cp "$apk" output/POS7_Tablet_R339_tab1.apk
           sha256sum output/*.apk > output/SHA256SUMS.txt
-          printf 'versionName=485.7.229-r338-tab1\nversionCode=%s\n' "$POS7_VERSION_CODE" > output/build-info.txt
+          printf 'versionName=485.7.229-r339-tab1\nversionCode=%s\n' "$POS7_VERSION_CODE" > output/build-info.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: POS7-Tablet-R338-tab1-${{ env.POS7_VERSION_CODE }}
+          name: POS7-Tablet-R339-tab1-${{ env.POS7_VERSION_CODE }}
           path: output/
           if-no-files-found: error
       - name: Delete temporary signing material
