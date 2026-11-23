@@ -17,5 +17,5 @@ assert.ok(!js.includes('localStorage.'));
 assert.ok(!js.includes('.onclick='));
 assert.ok(!js.includes('pos7_restore_same_device_r325'));
 assert.ok(old.includes('pos7_restore_same_device_status_r325'));
-assert.ok(gradle.includes("versionName '485.7.229-r333-tab1'"));
+assert.ok(gradle.includes("versionName '485.7.229-r334-tab1'"));
 console.log('R331 PASS: storage UI moved under sales settings, floating buttons removed, storage/cloud operations unchanged');
