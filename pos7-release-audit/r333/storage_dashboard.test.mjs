@@ -5,7 +5,7 @@ const html=fs.readFileSync(root+'app/src/main/assets/index.html','utf8');
 const js=fs.readFileSync(root+'app/src/main/assets/r333_storage_dashboard.js','utf8');
 const java=fs.readFileSync(root+'app/src/main/java/com/sokkarzeyedeh/pos7/MainActivity.java','utf8');
 const gradle=fs.readFileSync(root+'app/build.gradle','utf8');
-assert.ok(gradle.includes("versionName '485.7.229-r333-tab1'"));
+assert.ok(gradle.includes("versionName '485.7.229-r334-tab1'"));
 assert.ok(html.includes('id="pos7-r333-storage-dashboard"'));
 assert.ok(html.includes('id="pos7-r331-storage-settings"'));
 assert.ok(html.includes('pos7-r322-native-state-storage'));
