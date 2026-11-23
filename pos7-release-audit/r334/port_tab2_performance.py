@@ -39,6 +39,16 @@ if {n.lineno for n in blocks}!=set(selected):
 context={'html':html,'Path':Path,'re':re,'assets':assets,'app':app,'gradle':gradle}
 for n in blocks:
     text=ast.get_source_segment(builder,n)
+    if n.lineno==42:
+        # R321/native-storage chain may alter the layout of R185 diagnostics.
+        # Preserve diagnostic code; port only the proven lossless compression
+        # level=1 change, exactly once, with no state semantics changed.
+        text="""if branch=='tab2':
+    old_deflate='window.pako.deflate(value);'
+    if html.count(old_deflate)!=1:
+        raise RuntimeError('R334: Tab1 original compression path differs')
+    html=html.replace(old_deflate,'window.pako.deflate(value,{level:1});',1)
+"""
     if n.lineno==141:
         old="""sync_marker="if(localStorage.getItem('POS7_RESTORE_PENDING_R305'))return false;" """
         # Use exact source comparison without whitespace assumptions.
