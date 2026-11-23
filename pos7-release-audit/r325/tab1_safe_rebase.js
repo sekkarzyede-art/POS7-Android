@@ -76,7 +76,7 @@ function canon(x){
 }
 function comparableSections(s){
  const out=JSON.parse(JSON.stringify(s));
- if(out.meta&&typeof out.meta==='object')delete out.meta.generatedAt;
+ if(out.meta&&typeof out.meta==='object'&&out.meta.info&&typeof out.meta.info==='object')delete out.meta.info.generatedAt;
  return JSON.stringify(canon(out));
 }
 async function repairLocal(req,verified){
