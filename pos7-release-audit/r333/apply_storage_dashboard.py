@@ -49,7 +49,7 @@ assert h.count('id="pos7-r331-storage-settings"')==1
 assert h.count('id="saleSettingsPage"')==1
 assert h.count('id="pos7-r333-storage-dashboard"')==0
 assert "POS7_R174_SMART_CAS_SERVER_VERIFIED" in h
-assert g.count("versionName '485.7.229-r333-tab1'")==1
+assert g.count("versionName '485.7.229-r334-tab1'")==1
 js=Path('pos7-release-audit/r333/storage_dashboard.js').read_text(encoding='utf8')
 assert "pos333StorageStats" in js
 assert "pos7R331StorageSettings" in js
