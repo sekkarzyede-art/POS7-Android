@@ -26,7 +26,7 @@ assert "POS7_TRANSFER_COMPLETED_R305" not in js
 # External JS asset avoids HTMLParser inline-script token confusion.
 (assets/'r325_safe_rebase.js').write_text(js,encoding='utf8')
 h+='\n<script id="pos7-r325-safe-sync" src="r325_safe_rebase.js"></script>\n'
-g=g.replace("versionName '485.7.229-r322-tab1'","versionName '485.7.229-r330-tab1'",1)
+g=g.replace("versionName '485.7.229-r322-tab1'","versionName '485.7.229-r331-tab1'",1)
 hfile.write_text(h,encoding='utf8')
 gfile.write_text(g,encoding='utf8')
 print('R325 Store1: safety-gated manual repair UI installed without modifying existing accounts or sync flows')
