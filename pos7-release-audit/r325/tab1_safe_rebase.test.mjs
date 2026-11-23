@@ -10,7 +10,7 @@ assert.ok(h.includes('id="pos7-r325-safe-sync"'));
 assert.ok(h.includes('pos7-r322-native-state-storage'));
 assert.ok(h.includes('POS7_R174_SMART_CAS_SERVER_VERIFIED'));
 assert.ok(h.includes('pos7_inventory_commit_r155'));
-assert.ok(gradle.includes("versionName '485.7.229-r331-tab1'"));
+assert.ok(gradle.includes("versionName '485.7.229-r332-tab1'"));
 assert.ok(sql.includes('same_device_r325_receipts'));
 assert.ok(sql.includes("event_type<>'inventory_count'"));
 assert.ok(sql.includes('r325_product_revision_not_rebased'));
@@ -47,7 +47,7 @@ async function simulate(options={}){
    stock_revision:p.stock_revision,stock_revision_untrusted:p.stock_revision_untrusted
  });
  let verifies=0,reloaded=false,cloudSections=null,snapshotCall=0;
- const cloud={session:{access_token:'token'},
+ const cloud={url:'https://test.invalid',key:'test-public-key',session:{access_token:'token'},
   async req(url){calls.push('read');if(url.includes('select=sections,revision'))return [{sections:cloudSections,revision:3720}];return [{publisher_device:options.wrongDevice?'another': 'trusted-device-1',revision:3719}]},
   async rpc(name,args){
    calls.push(name);
@@ -80,8 +80,13 @@ async function simulate(options={}){
    receipts:{},returns:{},suppliers:{},wallet:{},walletTx:{}
   }})
  };
+ const fetch=async (url,opts)=>({ok:true,status:200,
+  json:async()=>[{sections:cloudSections,revision:3720}],
+  text:async()=>''});
+ const AbortController=class{constructor(){this.signal={aborted:false}}abort(){this.signal.aborted=true}};
  const ctx={document,window,state,localStorage:storage,
   navigator:{onLine:true},
+  fetch,AbortController,setTimeout,clearTimeout,
   location:{reload(){reloaded=true}},
   alert:v=>alerts.push(String(v)),confirm:()=>options.cancel!==true,
   crypto:{randomUUID:()=> '11111111-1111-4111-8111-111111111325'},
