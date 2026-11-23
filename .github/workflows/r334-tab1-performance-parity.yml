@@ -77,6 +77,12 @@ jobs:
         run: node --check r321-android/tab1/POS7_Tablet/app/src/main/assets/r333_storage_dashboard.js
       - name: Test R334 transferred invoice and boot optimizations
         run: node pos7-release-audit/r334/tab1_perf_parity.test.mjs
+      - name: Functional regression simulations for sale, purchase, ledger and balances on Tab1
+        run: |
+          node pos7-release-audit/r334/tab1_coalesce.test.mjs
+          node pos7-release-audit/r334/tab1_purchase_single_commit.test.mjs
+          node pos7-release-audit/r334/tab1_accounting_boot.test.mjs
+          node pos7-release-audit/r334/tab1_balances.test.mjs
       - name: Check R325 external JavaScript syntax separately
         run: node --check r321-android/tab1/POS7_Tablet/app/src/main/assets/r325_safe_rebase.js
       - name: Check HTML JavaScript syntax
