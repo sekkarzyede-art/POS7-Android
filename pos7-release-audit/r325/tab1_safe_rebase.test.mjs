@@ -80,9 +80,9 @@ async function simulate(options={}){
    receipts:{},returns:{},suppliers:{},wallet:{},walletTx:{}
   }})
  };
- const fetch=async (url,opts)=>({ok:true,status:200,
+ const fetch=async (url,opts)=>{calls.push('verify_large_read');return {ok:true,status:200,
   json:async()=>[{sections:cloudSections,revision:3720}],
-  text:async()=>''});
+  text:async()=>''};};
  const AbortController=class{constructor(){this.signal={aborted:false}}abort(){this.signal.aborted=true}};
  const ctx={document,window,state,localStorage:storage,
   navigator:{onLine:true},
@@ -107,7 +107,7 @@ assert.equal(unknown.storage.getItem('POS7_R174_SMART_CAS_SERVER_VERIFIED'),null
 assert.ok(!unknown.calls.includes('pos7_restore_same_device_r325'),'unknown status cannot start a second write');
 let ok=await simulate();
 assert.equal(ok.reloaded,true,'server verification then reload');
-assert.ok(ok.calls.filter(x=>x==='read').length>=2,'must read cloud for verification');
+assert.equal(ok.calls.filter(x=>x==='verify_large_read').length,1,'use independent extended read-only check');
 assert.equal(ok.storage.getItem('POS7_R174_SMART_CAS_SERVER_VERIFIED'),'yes');
 const next=JSON.parse(ok.raw);
 assert.equal(next.products.length,3);
