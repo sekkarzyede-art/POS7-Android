@@ -20,7 +20,7 @@ assert.ok(source.includes('AtomicFile'));
 assert.ok(source.includes('disk.finishWrite(out)'));
 assert.ok(source.includes('disk.failWrite(out)'));
 assert.ok(!js.includes("oldRemove.call(window.localStorage,MAIN)"),'do not delete original backup automatically');
-assert.ok(fs.readFileSync('r321-android/tab1/POS7_Tablet/app/build.gradle','utf8').includes("versionName '485.7.229-r333-tab1'"));
+assert.ok(fs.readFileSync('r321-android/tab1/POS7_Tablet/app/build.gradle','utf8').includes("versionName '485.7.229-r334-tab1'"));
 
 const KEY='POS7_TRIAL188_CLEAN';
 const original={products:[{id:11,name:'مرحبا',stock:12}],sales:[{id:'SAL-000912',total:700.3}],purchases:[{id:'PUR-1'}],accountingJournal:[{ref:'J1'}]};
