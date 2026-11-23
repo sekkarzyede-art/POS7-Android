@@ -1,0 +1,52 @@
+--- a/index.html
++++ b/index.html
+@@ -1461,0 +1462,5 @@
++<style>
++#saleReportModal #saleDeliveryTile{min-height:44px;background:#fff;color:#623c08;border:1px solid #c7924b}
++#saleReportModal #saleDeliveryTile[aria-pressed="true"]{background:#8b5108;color:#fff}
++#saleDeliveryTile[aria-pressed="true"]::before{content:"✓ ";}
++</style>
+@@ -1468,0 +1474 @@
++      <button type="button" id="saleDeliveryTile" aria-pressed="false" onclick="this.setAttribute('aria-pressed',this.getAttribute('aria-pressed')==='true'?'false':'true')">ديليفري</button>
+@@ -1859 +1865 @@
+-function showSaleReport(id,returnHome=false){let inv=state.sales.find(x=>x.id===id);if(!inv)return;currentSaleReportId=id;saleReportReturnHome=!!returnHome;document.getElementById('saleReportPaper').innerHTML=saleInvoicePaperHtml(inv);document.getElementById('saleReportModal').classList.add('show')}
++function showSaleReport(id,returnHome=false){let inv=state.sales.find(x=>x.id===id);if(!inv)return;document.getElementById('saleDeliveryTile').setAttribute('aria-pressed','false');currentSaleReportId=id;saleReportReturnHome=!!returnHome;document.getElementById('saleReportPaper').innerHTML=saleInvoicePaperHtml(inv);document.getElementById('saleReportModal').classList.add('show')}
+@@ -10603,25 +10609,7 @@
+- if(kind!=='sale'||!inv)return sendReceipt(kind,inv,forceAndroid,currencyOverride);
+- if(document.getElementById('saleDeliveryDialog'))return Promise.resolve(false);
+- var dialog=document.createElement('dialog');
+- dialog.id='saleDeliveryDialog';
+- dialog.dir='rtl';
+- dialog.style.cssText='position:fixed;margin:auto;padding:1.2em;border:1px solid #bbb;border-radius:12px;color:#142e4b';
+- dialog.innerHTML='<form method="dialog"><strong>طباعة فاتورة البيع</strong><p><label><input type="checkbox"> ضمّ الديليفري إلى الفاتورة</label></p><p><output></output></p><button type="button" data-print>طباعة</button> <button value="cancel">إلغاء</button></form>';
+- var checkbox=dialog.querySelector('input'), settings=read(), cur=currencyOverride||settings.currency||'USD';
+- function preview(){
+-  dialog.querySelector('output').textContent=(checkbox.checked?'عليكم مبلغ ':'قيمة الفاتورة ')+fMoney(checkbox.checked?deliveredTotal(inv,settings):totalUSD(inv),cur,inv);
+- }
+- checkbox.onchange=preview;
+- preview();
+- document.body.appendChild(dialog);
+- return new Promise(function(resolve){
+-  dialog.onclose=function(){dialog.remove();resolve(false)};
+-  dialog.querySelector('[data-print]').onclick=function(){
+-   var printCopy=Object.assign({},inv,{includePrintDelivery:checkbox.checked});
+-   dialog.onclose=null;
+-   dialog.close();
+-   dialog.remove();
+-   resolve(sendReceipt(kind,printCopy,forceAndroid,currencyOverride));
+-  };
+-  dialog.showModal();
+- });
++ return sendReceipt(kind,inv,forceAndroid,currencyOverride);
++}
++function printSaleFromReport(inv,currency){
++ var button=document.getElementById('saleDeliveryTile');
++ var selected=button.getAttribute('aria-pressed')==='true';
++ button.setAttribute('aria-pressed','false');
++ return sendReceipt('sale',Object.assign({},inv,{includePrintDelivery:selected}),false,currency);
+@@ -10636 +10624 @@
+-function printSaleCurrency(currency){var inv=(state.sales||[]).find(function(x){return x.id===currentSaleReportId});if(!inv)return toast('الفاتورة غير موجودة');return printReceipt('sale',inv,false,currency)}
++function printSaleCurrency(currency){var inv=(state.sales||[]).find(function(x){return x.id===currentSaleReportId});if(!inv)return toast('الفاتورة غير موجودة');return printSaleFromReport(inv,currency)}
+@@ -10640 +10628 @@
+-window.printCurrentSaleInvoice=function(){var inv=(state.sales||[]).find(function(x){return x.id===currentSaleReportId});if(!inv)return toast('الفاتورة غير موجودة');return printReceipt('sale',inv)};
++window.printCurrentSaleInvoice=function(){var inv=(state.sales||[]).find(function(x){return x.id===currentSaleReportId});if(!inv)return toast('الفاتورة غير موجودة');return printSaleFromReport(inv)};
