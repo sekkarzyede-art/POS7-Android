@@ -39,6 +39,29 @@ if {n.lineno for n in blocks}!=set(selected):
 context={'html':html,'Path':Path,'re':re,'assets':assets,'app':app,'gradle':gradle}
 for n in blocks:
     text=ast.get_source_segment(builder,n)
+    if n.lineno in (347,370):
+        # Both releases have diverged in auxiliary panels; extract ONLY the
+        # literal, verified old->new pairs. No copied startup assertions.
+        block=ast.parse(text).body[0]
+        chosen='replacements' if n.lineno==347 else 'anchors'
+        literal=next(stmt.value for stmt in block.body
+                     if isinstance(stmt,ast.Assign) and
+                     any(isinstance(t,ast.Name) and t.id==chosen for t in stmt.targets))
+        pairs=ast.literal_eval(literal)
+        applied=0
+        for old,new in pairs:
+            count=context['html'].count(old)
+            if count==1:
+                context['html']=context['html'].replace(old,new,1)
+                applied+=1
+            elif count==0:
+                print('R334 skip Tab2-only panel/timer:',old[:64])
+            else:
+                raise RuntimeError('R334 ambiguous lazy-render match: '+old[:64])
+        assert 'POS7_R174_SMART_CAS_SERVER_VERIFIED' in context['html']
+        print('Ported matching TAB2 performance:',selected[n.lineno],
+              'exact transforms',applied,'of',len(pairs))
+        continue
     if n.lineno==42:
         # R321/native-storage chain may alter the layout of R185 diagnostics.
         # Preserve diagnostic code; port only the proven lossless compression
