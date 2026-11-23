@@ -10,7 +10,7 @@ assert.ok(h.includes('id="pos7-r325-safe-sync"'));
 assert.ok(h.includes('pos7-r322-native-state-storage'));
 assert.ok(h.includes('POS7_R174_SMART_CAS_SERVER_VERIFIED'));
 assert.ok(h.includes('pos7_inventory_commit_r155'));
-assert.ok(gradle.includes("versionName '485.7.229-r328-tab1'"));
+assert.ok(gradle.includes("versionName '485.7.229-r330-tab1'"));
 assert.ok(sql.includes('same_device_r325_receipts'));
 assert.ok(sql.includes("event_type<>'inventory_count'"));
 assert.ok(sql.includes('r325_product_revision_not_rebased'));
@@ -46,7 +46,7 @@ async function simulate(options={}){
    name:p.name,barcode:p.barcode,stock:p.stock,
    stock_revision:p.stock_revision,stock_revision_untrusted:p.stock_revision_untrusted
  });
- let verifies=0,reloaded=false,cloudSections=null;
+ let verifies=0,reloaded=false,cloudSections=null,snapshotCall=0;
  const cloud={session:{access_token:'token'},
   async req(url){calls.push('read');if(url.includes('select=sections,revision'))return [{sections:cloudSections,revision:3720}];return [{publisher_device:options.wrongDevice?'another': 'trusted-device-1',revision:3719}]},
   async rpc(name,args){
@@ -76,7 +76,7 @@ async function simulate(options={}){
   P7TabletTest:{cashierBusy:()=>false,/* R327 regression: actual Tab1 exports cashierBusy only, no isBusy */},
   pos7BuildOwnerSnapshot:async()=>({sections:{
    products:JSON.parse(JSON.stringify(normItems)),sales:{},purchases:{},
-   cash:{},cashLedger:{},customers:{},expenses:{},meta:{},payments:{},
+   cash:{},cashLedger:{},customers:{},expenses:{},meta:{info:{generatedAt:'2026-11-23T00:'+String(++snapshotCall).padStart(2,'0')+':00.000Z',schema:1}},payments:{},
    receipts:{},returns:{},suppliers:{},wallet:{},walletTx:{}
   }})
  };
@@ -102,6 +102,7 @@ assert.equal(unknown.storage.getItem('POS7_R174_SMART_CAS_SERVER_VERIFIED'),null
 assert.ok(!unknown.calls.includes('pos7_restore_same_device_r325'),'unknown status cannot start a second write');
 let ok=await simulate();
 assert.equal(ok.reloaded,true,'server verification then reload');
+assert.ok(ok.calls.filter(x=>x==='read').length>=2,'must read cloud for verification');
 assert.equal(ok.storage.getItem('POS7_R174_SMART_CAS_SERVER_VERIFIED'),'yes');
 const next=JSON.parse(ok.raw);
 assert.equal(next.products.length,3);
