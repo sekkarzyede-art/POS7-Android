@@ -115,8 +115,10 @@ r319=r319.replace('root=Path("r305-android/tab2/POS7_Tablet")',
 r319=r319[:r319.index('# Create only a new version;')]
 r319=r319.replace('html=assets.read_text(encoding="utf-8")','html=html')
 assert 'pos319RepairDirty' in r319 and 'pos319ForeignKeys' in r319
-exec(compile(r319,'<R319-performance>',mode='exec'),{'__builtins__':__builtins__},locals())
-# Use the transformed html variable from the executed source.
+scope319={'__builtins__':__builtins__,'html':html}
+exec(compile(r319,'<R319-performance>',mode='exec'),scope319,scope319)
+# Reuse original, proven transform's exact output in the same namespace.
+html=scope319['html']
 assert 'pos319RepairDirty' in html and 'pos319ForeignKeys' in html
 print('Ported TAB2 performance: R319 conditional accounting persistence')
 
