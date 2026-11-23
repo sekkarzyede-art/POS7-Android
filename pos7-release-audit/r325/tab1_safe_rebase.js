@@ -79,6 +79,33 @@ function comparableSections(s){
  if(out.meta&&typeof out.meta==='object'&&out.meta.info&&typeof out.meta.info==='object')delete out.meta.info.generatedAt;
  return JSON.stringify(canon(out));
 }
+// R332: read-only full snapshot verification can exceed P7Cloud.req's 20s
+// default timeout on the 4413-product store. Do not change normal sync RPCs.
+async function readCloudForFinalVerification(){
+ const cloud=window.P7Cloud;
+ const path='/rest/v1/pos7_owner_snapshot?store_id=eq.pos7&select=sections,revision';
+ if(!cloud?.session||!cloud?.url||!cloud?.key)
+  fail('جلسة Supabase غير متاحة للتحقق النهائي');
+ const attempt=async function(retry){
+  const ctl=new AbortController();
+  const timer=setTimeout(()=>ctl.abort(),120000);
+  try{
+   const res=await fetch(cloud.url+path,{signal:ctl.signal,
+    headers:{apikey:cloud.key,Authorization:'Bearer '+cloud.session.access_token,
+     'Content-Type':'application/json'}});
+   if(res.status===401&&retry&&cloud.session.refresh_token){
+    await cloud.refresh();return attempt(false);
+   }
+   if(!res.ok)throw Error('فشل قراءة السحابة HTTP '+res.status+': '+(await res.text()).slice(0,250));
+   return await res.json();
+  }catch(e){
+   if(ctl.signal.aborted)
+    throw Error('انتهت مهلة قراءة التحقق (120 ثانية)؛ لم نعد النشر، بقيت حماية المخزون مفعلة');
+   throw e;
+  }finally{clearTimeout(timer)}
+ };
+ return attempt(true);
+}
 async function repairLocal(req,verified){
  const raw=localStorage.getItem(MAIN);
  if(!raw)fail('تعذر قراءة قاعدة التاب بعد النشر');
@@ -92,11 +119,12 @@ async function repairLocal(req,verified){
     verified.fingerprint!==verified.expected_fingerprint||
     Number(verified.catalog_count)!==productCount)
    fail('لم يثبت تطابق السحابة مع بيانات التاب');
- const cloud=await window.P7Cloud.req('/rest/v1/pos7_owner_snapshot?store_id=eq.pos7&select=sections,revision');
+ note('R332: نقرأ النسخة السحابية المؤرشفة للتحقق النهائي فقط؛ قد يستغرق التحميل وقتًا بسبب حجم البيانات...');
+ const cloud=await readCloudForFinalVerification();
  if(!Array.isArray(cloud)||cloud.length!==1||
     Number(cloud[0].revision)!==Number(verified.revision)||
     comparableSections(cloud[0].sections)!==comparableSections(sections))
-   fail('حالة السحابة بعد النشر لا تطابق النسخة المحلية؛ أبقينا الحماية');
+   fail('حالة السحابة بعد النشر لا تطابق النسخة المحلية؛ بقيت حماية المخزون. لم يتم نشر الأصناف مرة ثانية');
  if(localStorage.getItem(MAIN)!==raw)fail('حدثت تغييرات محلية أثناء التحقق النهائي');
  const updated=patchMetadata(raw,planned);
  if(updated!==raw){
