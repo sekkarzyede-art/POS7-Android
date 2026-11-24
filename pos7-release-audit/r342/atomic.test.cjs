@@ -13,7 +13,7 @@ function create(n,options={}){
  store.set('POS7_R212_BATCH_PROGRESS_V1',JSON.stringify(job));
  store.set('POS7_CLOUD_DEVICE_V1',dev);
  let commits=0, prepares=0, reconciles=[],reloads=0,renders=0;
- const context={window:{POS7_R340_local:(products,id,barcode)=>products.filter(p=>p.barcode===barcode),POS7_R188_preflightInventory:()=>({ok:true}),POS7_R166_reconcileCommittedInventory:async(event,payload)=>{
+ const context={window:{POS7_R341_normalizeBarcode:(barcode)=>{const raw=String(barcode??'').trim();return /^[0-9]+$/.test(raw)?raw.replace(/^0+(?=\d)/,''):raw;},POS7_R340_local:(products,id,barcode)=>products.filter(p=>p.barcode===barcode),POS7_R188_preflightInventory:()=>({ok:true}),POS7_R166_reconcileCommittedInventory:async(event,payload)=>{
     reconciles.push(event);
     const durable=JSON.parse(store.get('POS7_TRIAL188_CLEAN'));
     const product=durable.products.find(p=>p.id===payload.product_id);
