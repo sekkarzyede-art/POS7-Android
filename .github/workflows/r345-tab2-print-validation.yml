@@ -1,0 +1,88 @@
+
+name: Validate Tab2 R345 print and native image sharing (no APK)
+on:
+  push:
+    branches: [fix/tab2-r345-parity-storage]
+    paths: ['.github/workflows/r345-tab2-print-validation.yml', 'pos7-release-audit/r345-print/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      matrix:
+        branch: [tab2]
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - uses: android-actions/setup-android@v4
+      - run: sdkmanager --install 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Prepare restored-backup transfer sources
+        run: python3 pos7-release-audit/r305/build_sources.py
+      - name: Apply R324 safe accounting boot patch
+        run: python3 pos7-release-audit/r319/optimize_boot.py
+      - name: Apply R324 conditional cached USD balances persistence
+        run: python3 pos7-release-audit/r320/optimize_balances.py
+      - name: Apply R323 offline-only local backup approval for Tab2
+        run: python3 pos7-release-audit/r323/apply_local_only.py
+      - name: Add R324 same-device-only cloud reconciliation gated by R305
+        run: python3 pos7-release-audit/r324/apply_same_device.py
+      - name: Reconstruct previously verified integrated Tab2 source
+        run: |
+          app=r305-android/tab2/POS7_Tablet/app
+          python3 pos7-release-audit/r345/apply_storage_html.py "$app/src/main/assets/index.html"
+          python3 pos7-release-audit/r345/apply_native.py
+          python3 pos7-release-audit/r345-inventory/apply_inventory.py "$app/src/main/assets/index.html"
+          sha256sum "$app/src/main/assets/"{restore_transfer.js,local_restore_r323.js,same_device_r324.js} > /tmp/tab2-restore-sha
+      - name: Apply exact receipt edits and native image share
+        run: |
+          app=r305-android/tab2/POS7_Tablet/app
+          python3 pos7-release-audit/r345-print/apply_print.py "$app/src/main/assets/index.html"
+          python3 pos7-release-audit/r345-print/apply_native_share.py "$app/src/main"
+          sha256sum -c /tmp/tab2-restore-sha
+          node pos7-release-audit/r345-print/print_tests.cjs "$app/src/main/assets/index.html"
+          node pos7-release-audit/r345/storage_tests.cjs "$app/src/main/assets/index.html"
+      - name: Verify all scripts and private image provider
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from html.parser import HTMLParser
+          import hashlib,subprocess,xml.etree.ElementTree as ET
+          app=Path('r305-android/tab2/POS7_Tablet/app/src/main')
+          f=app/'assets/index.html'
+          assert hashlib.sha256(f.read_bytes()).hexdigest()=='b3325f9d58760c79a6fe94ec4daec580ecc7b8569dd514e069414c389a0f28b0'
+          h=f.read_text()
+          assert 'jdcolkgzwqpwbfvcrdje' not in h and 'https://rmskuolsiqbzxuakofpb.supabase.co' in h
+          assert 'عليكم مبلغ' not in h
+          assert h.count('id="saleDeliveryTile"')==1
+          class P(HTMLParser):
+              def __init__(self):super().__init__();self.active=False;self.s=[]
+              def handle_starttag(self,t,a):
+                  if t=='script':self.active=True;self.s.append('')
+              def handle_endtag(self,t):
+                  if t=='script':self.active=False
+              def handle_data(self,d):
+                  if self.active:self.s[-1]+=d
+          p=P();p.feed(h)
+          for i,s in enumerate(p.s):
+              if s.strip():
+                  r=subprocess.run(['node','--check'],input=s,text=True,capture_output=True)
+                  if r.returncode:raise SystemExit(f'Script {i}: {r.stderr}')
+          ns='{http://schemas.android.com/apk/res/android}'
+          providers=[x for x in ET.parse(app/'AndroidManifest.xml').iter('provider') if x.get(ns+'name')=='.SaleReceiptProvider']
+          assert len(providers)==1 and providers[0].get(ns+'exported')=='false' and providers[0].get(ns+'grantUriPermissions')=='true'
+          paths=list(ET.parse(app/'res/xml/sale_image_paths.xml').getroot())
+          assert len(paths)==1 and paths[0].tag=='cache-path' and paths[0].get('path')=='sale-receipts/'
+          print('Verified source and private provider; inline scripts:',len(p.s))
+          PY
+      - name: Compile native Android and merge manifest (no APK)
+        working-directory: r305-android/tab2/POS7_Tablet
+        run: gradle --no-daemon :app:processDebugMainManifest :app:compileDebugJavaWithJavac
