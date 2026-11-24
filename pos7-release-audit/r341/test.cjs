@@ -1,0 +1,17 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const html=fs.readFileSync(process.argv[2], 'utf8');
+assert.match(html,/POS7_R341_normalizeBarcode/);
+for(const m of html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g))new vm.Script(m[1]);
+const block=html.match(/<script id="pos7-r166-local-reconciliation">([\s\S]*?)<\/script>/);
+assert.ok(block,'R166 reconciliation script');
+const context={window:{POS7_R213_COUNT_CORRECTION_ACTIVE:true},console};
+vm.createContext(context);vm.runInContext(block[1].split('window.POS7_R166_reconcileCommittedInventory=')[0],context);
+const norm=context.window.POS7_R341_normalizeBarcode;
+assert.equal(norm('08000500380642'),'8000500380642');
+assert.equal(norm('000'),'0');assert.equal(norm('x007'),'x007');
+const f=context.window.POS7_R340_local;
+assert.equal(f([{id:11,barcode:'08000500380642'}],11,'8000500380642').length,1);
+assert.equal(f([{id:11,barcode:'08000500380642'},{id:12,barcode:'8000500380642'}],11,'8000500380642').length,0);
+assert.match(html,/هوية الصنف بحاجة إلى مراجعة/);
+assert.match(html,/matches.length!==1/);
+console.log('PASS R341 normalization, ambiguity guard, syntax and unchanged legacy references');
