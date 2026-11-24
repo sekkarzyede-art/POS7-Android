@@ -1,0 +1,44 @@
+DO $test$
+DECLARE r jsonb; before_sections jsonb; after_sections jsonb; before_rev bigint; failed boolean; orig jsonb;
+BEGIN
+ SELECT sections,revision INTO before_sections,before_rev FROM pg_temp.pos7_owner_snapshot;
+ r:=pg_temp.pos7_inventory_repair_revisions_tab2_r345('fixture-tab2',7,'[{"id":"p2","barcode":"456","stock":0,"stock_revision":null},{"id":"p3","barcode":"555","stock":4,"stock_revision":null},{"id":"p4","barcode":"0789","stock":1,"stock_revision":null},{"id":"p6","barcode":"654","stock":0,"stock_revision":null},{"id":"p7","barcode":"777","stock":2,"stock_revision":0},{"id":"p8","barcode":"888","stock":4,"stock_revision":5}]');
+ IF r->'repaired' IS DISTINCT FROM '{"p2":1,"p8":6}'::jsonb OR r->>'revision'<>'8' THEN RAISE EXCEPTION 'repair unexpected %',r;END IF;
+ INSERT INTO pg_temp.r345_test_results VALUES ('repair valid missing/untrusted, preserve monotonic revision');
+ IF r->'skipped'->>'p3'<>'local_cloud_quantity_differs' OR r->'skipped'->>'p4'<>'ambiguous_barcode' OR r->'skipped'->>'p6'<>'inventory_history_requires_review' OR r->'skipped'->>'p7'<>'already_trusted' THEN RAISE EXCEPTION 'skip rules unexpected %',r;END IF;
+ INSERT INTO pg_temp.r345_test_results VALUES ('reject mismatch, ambiguous barcode, pending command and trusted revision');
+ SELECT sections INTO after_sections FROM pg_temp.pos7_owner_snapshot;
+ IF after_sections-'products' IS DISTINCT FROM before_sections-'products' OR EXISTS(SELECT 1 FROM jsonb_each(before_sections->'products') x WHERE x.value-'stock_revision'-'stock_revision_untrusted' IS DISTINCT FROM (after_sections->'products'->x.key)-'stock_revision'-'stock_revision_untrusted') THEN RAISE EXCEPTION 'repair changed nonmetadata';END IF;
+ INSERT INTO pg_temp.r345_test_results VALUES ('repair modifies only metadata, all quantities and financial sections preserved');
+ failed:=false;BEGIN PERFORM pg_temp.pos7_inventory_repair_revisions_tab2_r345('fixture-tab2',7,'[]');EXCEPTION WHEN OTHERS THEN failed:=SQLERRM='r345_snapshot_changed';END;IF NOT failed THEN RAISE EXCEPTION 'stale revision accepted';END IF;
+ INSERT INTO pg_temp.r345_test_results VALUES ('stale snapshot CAS rejected');
+ failed:=false;BEGIN PERFORM pg_temp.pos7_inventory_repair_revisions_tab2_r345('wrong-device',8,'[]');EXCEPTION WHEN OTHERS THEN failed:=SQLERRM='r345_gate_disabled';END;IF NOT failed THEN RAISE EXCEPTION 'wrong device accepted';END IF;
+ INSERT INTO pg_temp.r345_test_results VALUES ('wrong device rejected');
+ PERFORM set_config('pos7.r345_test_owner','no',true);failed:=false;BEGIN PERFORM pg_temp.pos7_inventory_repair_revisions_tab2_r345('fixture-tab2',8,'[]');EXCEPTION WHEN OTHERS THEN failed:=SQLERRM='r345_owner_required';END;IF NOT failed THEN RAISE EXCEPTION 'nonowner accepted';END IF;PERFORM set_config('pos7.r345_test_owner','yes',true);
+ INSERT INTO pg_temp.r345_test_results VALUES ('nonowner rejected');
+ UPDATE pg_temp.pos7_store2_clone_guard_r218 SET blocked=true;failed:=false;BEGIN PERFORM pg_temp.pos7_inventory_repair_revisions_tab2_r345('fixture-tab2',8,'[]');EXCEPTION WHEN OTHERS THEN failed:=SQLERRM='r345_store2_blocked';END;IF NOT failed THEN RAISE EXCEPTION 'clone guard ignored';END IF;UPDATE pg_temp.pos7_store2_clone_guard_r218 SET blocked=false;
+ INSERT INTO pg_temp.r345_test_results VALUES ('clone guard enforced');
+ failed:=false;BEGIN PERFORM pg_temp.pos7_inventory_repair_revisions_tab2_r345('fixture-tab2',8,'[{"id":"p2"},{"id":"p2"}]');EXCEPTION WHEN OTHERS THEN failed:=SQLERRM='r345_duplicate_repair_ids';END;IF NOT failed THEN RAISE EXCEPTION 'duplicate ids accepted';END IF;
+ INSERT INTO pg_temp.r345_test_results VALUES ('duplicate repair IDs rejected');
+ SELECT payload INTO orig FROM pg_temp.pos7_owner_commands WHERE event_id='00000000-0000-4000-8000-000000000001';
+ r:=pg_temp.pos7_inventory_prepare_tab2_r345('00000000-0000-4000-8000-000000000001','fixture-tab2','p1','123',7);
+ IF r->>'status'<>'prepared' OR r->'payload'->>'baseline_qty'<>'-2' OR r->'payload'->>'stock_revision'<>'5' OR r->'payload'->>'barcode'<>'٠١٢٣' OR r->'payload'->'r340_original' IS DISTINCT FROM orig THEN RAISE EXCEPTION 'prepare failed %',r;END IF;
+ INSERT INTO pg_temp.r345_test_results VALUES ('prepare normalizes Arabic and leading zero, rebases stock, preserves original phone payload');
+ r:=pg_temp.pos7_inventory_prepare_tab2_r345('00000000-0000-4000-8000-000000000001','fixture-tab2','p7','123',7);IF r->>'status'<>'review' THEN RAISE EXCEPTION 'wrong identity accepted';END IF;
+ INSERT INTO pg_temp.r345_test_results VALUES ('wrong cloud identity not substituted');
+ -- Force second command stale so actual R254 rejects entire batch before applying any stock.
+ UPDATE pg_temp.pos7_owner_commands SET payload=jsonb_set(payload,'{baseline_qty}','99') WHERE event_id='00000000-0000-4000-8000-000000000007';
+ failed:=false;BEGIN PERFORM pg_temp.pos7_inventory_commit_batch_r254(ARRAY['00000000-0000-4000-8000-000000000001'::uuid,'00000000-0000-4000-8000-000000000007'::uuid],'fixture-tab2',true);EXCEPTION WHEN OTHERS THEN failed:=SQLERRM='inventory_batch_stock_changed';END;
+ IF NOT failed OR (SELECT status FROM pg_temp.pos7_owner_commands WHERE event_id='00000000-0000-4000-8000-000000000001')<>'pending' THEN RAISE EXCEPTION 'atomic preflight failed';END IF;
+ INSERT INTO pg_temp.r345_test_results VALUES ('R254 rejects stale batch without committing any item');
+ r:=pg_temp.pos7_inventory_prepare_tab2_r345('00000000-0000-4000-8000-000000000007','fixture-tab2','p7','777',10);IF r->>'status'<>'prepared' THEN RAISE EXCEPTION 'prepare second failed';END IF;
+ r:=pg_temp.pos7_inventory_commit_batch_r254(ARRAY['00000000-0000-4000-8000-000000000001'::uuid,'00000000-0000-4000-8000-000000000007'::uuid],'fixture-tab2',true);
+ IF r->>'count'<>'2' OR r->>'status'<>'committed' OR (SELECT sections->'products'->'p1'->>'stock' FROM pg_temp.pos7_owner_snapshot)<>'7' OR (SELECT sections->'products'->'p7'->>'stock' FROM pg_temp.pos7_owner_snapshot)<>'10' THEN RAISE EXCEPTION 'R254 commit failed %',r;END IF;
+ INSERT INTO pg_temp.r345_test_results VALUES ('actual R254/R155 logic accepts prepared counts in one atomic batch');
+ r:=pg_temp.pos7_inventory_commit_r155('00000000-0000-4000-8000-000000000001','fixture-tab2');IF r->>'replayed'<>'true' OR (SELECT sections->'products'->'p1'->>'stock' FROM pg_temp.pos7_owner_snapshot)<>'7' THEN RAISE EXCEPTION 'duplicate replay unsafe';END IF;
+ INSERT INTO pg_temp.r345_test_results VALUES ('R155 duplicate event is read-only replay');
+ SELECT sections INTO after_sections FROM pg_temp.pos7_owner_snapshot;IF after_sections-'products' IS DISTINCT FROM before_sections-'products' THEN RAISE EXCEPTION 'financial section changed';END IF;
+ INSERT INTO pg_temp.r345_test_results VALUES ('inventory approval preserves financial snapshot');
+END $test$;
+SELECT count(*) AS passed, jsonb_agg(test ORDER BY test) AS tests FROM pg_temp.r345_test_results;
+ROLLBACK;
