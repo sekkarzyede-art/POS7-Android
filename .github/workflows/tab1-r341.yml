@@ -1,5 +1,5 @@
 
-name: Build POS7 Tab1 R341 Inventory Guard
+name: Build POS7 Tab1 R342 Atomic Inventory
 on:
   push:
     branches: [fix/tab1-r341-inventory-alias]
@@ -132,6 +132,12 @@ jobs:
           node pos7-release-audit/r341/test.cjs r321-android/tab1/POS7_Tablet/app/src/main/assets/index.html
           node pos7-release-audit/r340/test.cjs r321-android/tab1/POS7_Tablet/app/src/main/assets/index.html
           sed -i 's/485.7.229-r340-tab1/485.7.229-r341-tab1/g' r321-android/tab1/POS7_Tablet/app/build.gradle
+      - name: Apply R342 single-transaction batch approval and recovery
+        run: |
+          python3 pos7-release-audit/r342/patch.py r321-android/tab1/POS7_Tablet/app/src/main/assets/index.html
+          node pos7-release-audit/r342/atomic.test.cjs r321-android/tab1/POS7_Tablet/app/src/main/assets/index.html
+          node pos7-release-audit/r340/test.cjs r321-android/tab1/POS7_Tablet/app/src/main/assets/index.html
+          sed -i 's/485.7.229-r341-tab1/485.7.229-r342-tab1/g' r321-android/tab1/POS7_Tablet/app/build.gradle
       - name: Set upgrade versionCode
         env:
           INSTALLED_CODE: ${{ inputs.installed_version_code }}
@@ -209,16 +215,16 @@ jobs:
           assert 'POS7_TRIAL188_CLEAN' in source
           print('R321 signed APK contains verified tab1 quota recovery')
           PY
-          "$sdk/aapt" dump badging "$apk" | grep -F "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.229-r341-tab1'"
+          "$sdk/aapt" dump badging "$apk" | grep -F "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.229-r342-tab1'"
           actual=$("$sdk/apksigner" verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2}' | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')
           test "$actual" = "$POS7_SIGNING_CERT_SHA256"
           mkdir -p output
-          cp "$apk" output/POS7_Tablet_R341_tab1.apk
+          cp "$apk" output/POS7_Tablet_R342_tab1.apk
           sha256sum output/*.apk > output/SHA256SUMS.txt
-          printf 'versionName=485.7.229-r341-tab1\nversionCode=%s\n' "$POS7_VERSION_CODE" > output/build-info.txt
+          printf 'versionName=485.7.229-r342-tab1\nversionCode=%s\n' "$POS7_VERSION_CODE" > output/build-info.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: POS7-Tablet-R341-tab1-${{ env.POS7_VERSION_CODE }}
+          name: POS7-Tablet-R342-tab1-${{ env.POS7_VERSION_CODE }}
           path: output/
           if-no-files-found: error
       - name: Delete temporary signing material
