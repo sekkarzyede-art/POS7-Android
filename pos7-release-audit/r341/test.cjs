@@ -5,7 +5,11 @@ for(const m of html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g))new vm.Scri
 const block=html.match(/<script id="pos7-r166-local-reconciliation">([\s\S]*?)<\/script>/);
 assert.ok(block,'R166 reconciliation script');
 const context={window:{POS7_R213_COUNT_CORRECTION_ACTIVE:true},console};
-vm.createContext(context);vm.runInContext(block[1].split('window.POS7_R166_reconcileCommittedInventory=')[0],context);
+vm.createContext(context);
+const begin=block[1].indexOf('window.POS7_R341_normalizeBarcode=function');
+const end=block[1].indexOf('window.POS7_R166_reconcileCommittedInventory=',begin);
+assert.ok(begin>=0&&end>begin,'R341 guard before R166');
+vm.runInContext(block[1].slice(begin,end),context);
 const norm=context.window.POS7_R341_normalizeBarcode;
 assert.equal(norm('08000500380642'),'8000500380642');
 assert.equal(norm('000'),'0');assert.equal(norm('x007'),'x007');
