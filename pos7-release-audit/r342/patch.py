@@ -234,6 +234,40 @@ sku_guard = r'''<script id="pos7-r342-no-duplicate-sku">
   };
   wrapped._pos342BarcodeGuard=true;window.savePurchase=savePurchase=wrapped;
  }
+ function protectImportRows(){
+  if(typeof pos109ImportRows==='undefined'||!Array.isArray(pos109ImportRows))return 0;
+  const mode=document.getElementById('productImportMode')?.value||'merge';
+  const fromFile=new Map(),existing=new Map();let blocked=0;
+  for(const item of pos109ImportRows){if(item.status||!item.barcode)continue;
+   const k=key(item.barcode);if(!fromFile.has(k))fromFile.set(k,[]);fromFile.get(k).push(item);
+  }
+  if(mode!=='replace')for(const p of (state?.products||[])){
+   const k=key(p.barcode);if(!k)continue;
+   if(!existing.has(k))existing.set(k,[]);existing.get(k).push(p);
+  }
+  for(const item of pos109ImportRows){
+   if(item.status||!item.barcode)continue;
+   const k=key(item.barcode),group=existing.get(k)||[];
+   if((fromFile.get(k)||[]).length>1||group.length>1){
+    item.status='تعارض باركود — يحتاج مراجعة';blocked++;continue;
+   }
+   if(group.length===1&&String(group[0].barcode)!==String(item.barcode))
+    item.barcode=String(group[0].barcode); // Update existing exact SKU, never create a second record.
+  }
+  return blocked;
+ }
+ const oldPreview=window.previewProductsImport;
+ if(typeof oldPreview==='function'&&!oldPreview._pos342BarcodeGuard){
+  const wrapped=async function(){const result=await oldPreview.apply(this,arguments);const blocked=protectImportRows();
+   if(blocked&&typeof renderProductsImportPreview==='function')renderProductsImportPreview('معاينة الاستيراد — تعارض الباركود');
+   return result;};wrapped._pos342BarcodeGuard=true;window.previewProductsImport=previewProductsImport=wrapped;
+ }
+ const oldConfirm=window.confirmProductsImport;
+ if(typeof oldConfirm==='function'&&!oldConfirm._pos342BarcodeGuard){
+  const wrapped=function(){const blocked=protectImportRows();
+   if(blocked&&typeof renderProductsImportPreview==='function')renderProductsImportPreview('معاينة الاستيراد — استبعاد التعارضات');
+   return oldConfirm.apply(this,arguments);};wrapped._pos342BarcodeGuard=true;window.confirmProductsImport=confirmProductsImport=wrapped;
+ }
  function attachReview(){
   const modal=document.getElementById('productModal');const content=modal?.querySelector('.modalbox')||modal;
   if(!content||document.getElementById('pos342BarcodeReview'))return;
