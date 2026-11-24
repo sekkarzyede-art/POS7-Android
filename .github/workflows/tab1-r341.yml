@@ -128,6 +128,7 @@ jobs:
       - name: Test R341 identity normalization and safe reconciliation
         run: |
           node inventory-repair/r341/identity.test.cjs
+          python3 -m py_compile pos7-release-audit/r341/patch.py pos7-release-audit/r342/patch.py
           python3 pos7-release-audit/r341/patch.py r321-android/tab1/POS7_Tablet/app/src/main/assets/index.html
           node pos7-release-audit/r341/test.cjs r321-android/tab1/POS7_Tablet/app/src/main/assets/index.html
           node pos7-release-audit/r340/test.cjs r321-android/tab1/POS7_Tablet/app/src/main/assets/index.html
