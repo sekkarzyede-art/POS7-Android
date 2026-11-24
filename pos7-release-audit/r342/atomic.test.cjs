@@ -12,9 +12,20 @@ function create(n,options={}){
  store.set('POS7_TRIAL188_CLEAN',JSON.stringify({products:prods.map(x=>({...x}))}));
  store.set('POS7_R212_BATCH_PROGRESS_V1',JSON.stringify(job));
  store.set('POS7_CLOUD_DEVICE_V1',dev);
- let commits=0, prepares=0, reconciles=[],reloads=0;
- const context={window:{POS7_R340_local:(products,id,barcode)=>products.filter(p=>p.barcode===barcode),POS7_R188_preflightInventory:()=>({ok:true}),POS7_R166_reconcileCommittedInventory:async(event,payload)=>{reconciles.push(event);return{status:'local_reconciled_reload_required'};},location:{reload:()=>reloads++}},
-  document:{readyState:'loading',addEventListener(){},getElementById:()=>({textContent:''})},
+ let commits=0, prepares=0, reconciles=[],reloads=0,renders=0;
+ const context={window:{POS7_R340_local:(products,id,barcode)=>products.filter(p=>p.barcode===barcode),POS7_R188_preflightInventory:()=>({ok:true}),POS7_R166_reconcileCommittedInventory:async(event,payload)=>{
+    reconciles.push(event);
+    const durable=JSON.parse(store.get('POS7_TRIAL188_CLEAN'));
+    const product=durable.products.find(p=>p.id===payload.product_id);
+    product.stock=payload.counted_qty;product.stock_revision++;
+    durable.pos7InventoryApplied=durable.pos7InventoryApplied||{};
+    durable.pos7InventoryApplied[event]={eventId:event,productId:product.id,after:product.stock};
+    durable.inventoryAdjustments=[...(durable.inventoryAdjustments||[]),{cloudEventId:event,after:product.stock}];
+    store.set('POS7_TRIAL188_CLEAN',JSON.stringify(durable));
+    context.window.POS7_R166_RELOAD_REQUIRED=true;
+    return{status:'local_reconciled_reload_required'};
+  },location:{reload:()=>reloads++}},
+  renderStock:()=>renders++,renderProducts:()=>renders++,renderHome:()=>renders++,document:{readyState:'loading',addEventListener(){},getElementById:()=>({textContent:''})},
   localStorage:{getItem:key=>store.get(key)||null,setItem:(key,val)=>store.set(key,String(val))},sessionStorage:{getItem:()=>null,removeItem(){}},state:{products:prods},console};
  context.window.P7Cloud={session:{},req:async uri=>{
   if(uri.includes('pos7_owner_commands')){
@@ -42,13 +53,13 @@ function create(n,options={}){
   throw Error('unknown RPC '+name);
  }};
  vm.createContext(context);vm.runInContext(code,context);
- return{context,store,cmds,run:()=>context.window.POS7_R213.step(),recover:()=>context.window.POS7_R213.recover(),metrics:()=>({commits,prepares,reconciles,reloads}),job:()=>JSON.parse(store.get('POS7_R212_BATCH_PROGRESS_V1'))};
+ return{context,store,cmds,run:()=>context.window.POS7_R213.step(),recover:()=>context.window.POS7_R213.recover(),metrics:()=>({commits,prepares,reconciles,reloads,renders}),job:()=>JSON.parse(store.get('POS7_R212_BATCH_PROGRESS_V1'))};
 }
 (async()=>{
  for(const n of [5,10,20]){
   const t=create(n);await t.run();const m=t.metrics();
   assert.equal(m.commits,1);assert.equal(m.prepares,n);assert.equal(m.reconciles.length,n);
-  assert.equal(m.reloads,1);assert.equal(t.job().state,'complete');assert.equal(t.job().approved.length,n);
+  assert.equal(m.reloads,0,'safe soft refresh must avoid full page reload');assert.equal(m.renders,3);assert.equal(t.job().state,'complete');assert.equal(t.job().approved.length,n);assert.equal(t.context.window.POS7_R166_RELOAD_REQUIRED,false);
   await t.recover();assert.equal(t.metrics().commits,1,'retry must not commit again');
  }
  const blocked=create(5,{blocked:true});await blocked.run();assert.equal(blocked.job().state,'committing');assert.equal(blocked.metrics().reconciles.length,0);
