@@ -14,7 +14,9 @@ new="""window.POS7_R341_normalizeBarcode=function(barcode){
 };
 window.POS7_R340_local=function(products,id,barcode){
  const norm=window.POS7_R341_normalizeBarcode;
- const rows=(products||[]).filter(x=>norm(x.barcode)===norm(barcode));
+ const all=(products||[]).filter(x=>norm(x.barcode)===norm(barcode));
+ const exact=all.filter(x=>String(x.barcode)===String(barcode));
+ const rows=exact.length===1?exact:(all.length===1?all:[]);
  // A leading-zero collision with two independent local records is not silently merged.
  if(rows.length!==1)return [];
  if(!window.POS7_R213_COUNT_CORRECTION_ACTIVE&&String(rows[0].id)!==String(id))return [];
@@ -26,7 +28,9 @@ new=new.replace('\\\\d','\\d')
 assert s.count(old)==1, 'expected R340 local resolver missing or duplicated'
 s=s.replace(old,new,1)
 old2="const matches=Object.values(snapshot.sections.products).filter(x=>str(x.barcode)===str(row.payload.barcode));"
-new2="""const matches=Object.values(snapshot.sections.products).filter(x=>window.POS7_R341_normalizeBarcode(x.barcode)===window.POS7_R341_normalizeBarcode(row.payload.barcode));
+new2="""const allMatches=Object.values(snapshot.sections.products).filter(x=>window.POS7_R341_normalizeBarcode(x.barcode)===window.POS7_R341_normalizeBarcode(row.payload.barcode));
+  const exactMatches=allMatches.filter(x=>str(x.barcode)===str(row.payload.barcode));
+  const matches=exactMatches.length===1?exactMatches:(allMatches.length===1?allMatches:[]);
   // Never call R340 with matches[0] if no unique unambiguous cloud product exists.
   if(matches.length!==1){
    job.issues.push(str(row.payload.barcode)+': هوية الصنف بحاجة إلى مراجعة؛ لا دمج تلقائي');
@@ -41,11 +45,15 @@ new2="""const matches=Object.values(snapshot.sections.products).filter(x=>window
 assert s.count(old2)==1, 'R340 cloud matcher missing'
 s=s.replace(old2,new2,1)
 old3="const cs=Object.values(cloud).filter(c=>str(c.barcode)===bar);"
-new3="const cs=Object.values(cloud).filter(c=>window.POS7_R341_normalizeBarcode(c.barcode)===window.POS7_R341_normalizeBarcode(bar));"
+new3="const allCloud=Object.values(cloud).filter(c=>window.POS7_R341_normalizeBarcode(c.barcode)===window.POS7_R341_normalizeBarcode(bar));
+ const exactCloud=allCloud.filter(c=>str(c.barcode)===bar);
+ const cs=exactCloud.length===1?exactCloud:(allCloud.length===1?allCloud:[]);"
 assert s.count(old3)==1,'cloud isSafe matcher missing'
 s=s.replace(old3,new3,1)
 old4="const ls=(local?.products||[]).filter(c=>str(c.barcode)===bar);"
-new4="const ls=(local?.products||[]).filter(c=>window.POS7_R341_normalizeBarcode(c.barcode)===window.POS7_R341_normalizeBarcode(bar));"
+new4="const allLocal=(local?.products||[]).filter(c=>window.POS7_R341_normalizeBarcode(c.barcode)===window.POS7_R341_normalizeBarcode(bar));
+ const exactLocal=allLocal.filter(c=>str(c.barcode)===bar);
+ const ls=exactLocal.length===1?exactLocal:(allLocal.length===1?allLocal:[]);"
 assert s.count(old4)==1,'local isSafe matcher missing'
 s=s.replace(old4,new4,1)
 p.write_text(s,encoding='utf-8')
