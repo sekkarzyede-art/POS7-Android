@@ -1,0 +1,17 @@
+name: POS7 R341 Inventory identity regression
+on:
+  push:
+    branches: [fix/tab1-r341-inventory-alias]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify leading-zero collision, manual alias, and movement idempotency
+        run: node inventory-repair/r341/identity.test.cjs
