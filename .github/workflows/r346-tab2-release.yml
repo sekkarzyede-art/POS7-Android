@@ -1,0 +1,215 @@
+
+name: Build signed Tab2 R346 final integration
+on:
+  push:
+    branches: [fix/tab2-r345-parity-storage]
+    paths: ['.github/workflows/r346-tab2-release.yml']
+  workflow_dispatch:
+    inputs:
+      installed_version_code:
+        description: 'Optional actual installed Tab2 versionCode'
+        required: false
+        default: ''
+        type: string
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      matrix:
+        branch: [tab2]
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - uses: android-actions/setup-android@v4
+      - run: sdkmanager --install 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Prepare restored-backup transfer sources
+        run: python3 pos7-release-audit/r305/build_sources.py
+      - name: Apply R324 safe accounting boot patch
+        run: python3 pos7-release-audit/r319/optimize_boot.py
+      - name: Apply R324 conditional cached USD balances persistence
+        run: python3 pos7-release-audit/r320/optimize_balances.py
+      - name: Apply R323 offline-only local backup approval for Tab2
+        run: python3 pos7-release-audit/r323/apply_local_only.py
+      - name: Add R324 same-device-only cloud reconciliation gated by R305
+        run: python3 pos7-release-audit/r324/apply_same_device.py
+      - name: Reconstruct previously verified integrated Tab2 source
+        run: |
+          app=r305-android/tab2/POS7_Tablet/app
+          python3 pos7-release-audit/r345/apply_storage_html.py "$app/src/main/assets/index.html"
+          python3 pos7-release-audit/r345/apply_native.py
+          python3 pos7-release-audit/r345-inventory/apply_inventory.py "$app/src/main/assets/index.html"
+          sha256sum "$app/src/main/assets/"{restore_transfer.js,local_restore_r323.js,same_device_r324.js} > /tmp/tab2-restore-sha
+      - name: Apply exact receipt edits and native image share
+        run: |
+          app=r305-android/tab2/POS7_Tablet/app
+          python3 pos7-release-audit/r345-print/apply_print.py "$app/src/main/assets/index.html"
+          python3 pos7-release-audit/r345-print/apply_native_share.py "$app/src/main"
+          sha256sum -c /tmp/tab2-restore-sha
+          node pos7-release-audit/r345-print/print_tests.cjs "$app/src/main/assets/index.html"
+          node pos7-release-audit/r345/storage_tests.cjs "$app/src/main/assets/index.html"
+      - name: Apply exact R346 review outcome and test final integrated source
+        run: |
+          app=r305-android/tab2/POS7_Tablet/app
+          python3 pos7-release-audit/r346/apply_review.py "$app/src/main/assets/index.html"
+          sha256sum -c /tmp/tab2-restore-sha
+          node pos7-release-audit/r345-print/print_tests.cjs "$app/src/main/assets/index.html"
+          node pos7-release-audit/r345/storage_tests.cjs "$app/src/main/assets/index.html"
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          p=Path('r305-android/tab2/POS7_Tablet/app/src/main/assets/index.html')
+          assert hashlib.sha256(p.read_bytes()).hexdigest()=='0307d17448900cdc5c276296a8263d05690209f2d8e913196b2d49555bebd2e8'
+          h=p.read_text()
+          for marker in ['pos7_inventory_mark_review_r346','R346_review_ack_unverified','verifiedReview(found[0],id)','const MAX_BATCH=30;','pos7_inventory_commit_batch_r254','POS7_R345_REPAIR_JOURNAL_V1','POS7_R344_productHeld','POS7_RESTORE_PENDING_R305','pos7_inventory_repair_revisions_tab2_r345','pos7_inventory_prepare_tab2_r345','cloudStatus:\'rejected\'']:
+              assert marker in h,marker
+          assert 'R213: اعتماد دفعة الجرد جارٍ؛ لا تغيّر المخزون حتى انتهاء الدفعة' not in h
+          print('Exact tested R346 candidate and inventory guards verified')
+          PY
+      - name: Verify all scripts and private image provider
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from html.parser import HTMLParser
+          import hashlib,subprocess,xml.etree.ElementTree as ET
+          app=Path('r305-android/tab2/POS7_Tablet/app/src/main')
+          f=app/'assets/index.html'
+          assert hashlib.sha256(f.read_bytes()).hexdigest()=='0307d17448900cdc5c276296a8263d05690209f2d8e913196b2d49555bebd2e8'
+          h=f.read_text()
+          assert 'jdcolkgzwqpwbfvcrdje' not in h and 'https://rmskuolsiqbzxuakofpb.supabase.co' in h
+          assert 'عليكم مبلغ' not in h
+          assert h.count('id="saleDeliveryTile"')==1
+          class P(HTMLParser):
+              def __init__(self):super().__init__();self.active=False;self.s=[]
+              def handle_starttag(self,t,a):
+                  if t=='script':self.active=True;self.s.append('')
+              def handle_endtag(self,t):
+                  if t=='script':self.active=False
+              def handle_data(self,d):
+                  if self.active:self.s[-1]+=d
+          p=P();p.feed(h)
+          for i,s in enumerate(p.s):
+              if s.strip():
+                  r=subprocess.run(['node','--check'],input=s,text=True,capture_output=True)
+                  if r.returncode:raise SystemExit(f'Script {i}: {r.stderr}')
+          ns='{http://schemas.android.com/apk/res/android}'
+          providers=[x for x in ET.parse(app/'AndroidManifest.xml').iter('provider') if x.get(ns+'name')=='.SaleReceiptProvider']
+          assert len(providers)==1 and providers[0].get(ns+'exported')=='false' and providers[0].get(ns+'grantUriPermissions')=='true'
+          paths=list(ET.parse(app/'res/xml/sale_image_paths.xml').getroot())
+          assert len(paths)==1 and paths[0].tag=='cache-path' and paths[0].get('path')=='sale-receipts/'
+          print('Verified source and private provider; inline scripts:',len(p.s))
+          PY
+      - name: Set R346 release identity without changing business logic
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          app=Path('r305-android/tab2/POS7_Tablet/app')
+          h=app/'src/main/assets/index.html'; g=app/'build.gradle'
+          b=h.read_bytes(); old='485.7.229-r345-tab2'.encode(); new='485.7.229-r346-tab2'.encode()
+          assert b.count(old)>=1 and new not in b
+          h.write_bytes(b.replace(old,new))
+          raw=g.read_text(); assert raw.count("versionName '485.7.229-r345-tab2'")==1
+          g.write_text(raw.replace("versionName '485.7.229-r345-tab2'","versionName '485.7.229-r346-tab2'"))
+          assert hashlib.sha256(h.read_bytes().replace(new,old)).hexdigest()=='0307d17448900cdc5c276296a8263d05690209f2d8e913196b2d49555bebd2e8'
+          Path('/tmp/r346-release-html.sha').write_text(hashlib.sha256(h.read_bytes()).hexdigest())
+          PY
+      - name: Set upgrade versionCode
+        env:
+          INSTALLED_CODE: ${{ inputs.installed_version_code }}
+        run: |
+          python3 - <<'PY2'
+          import os
+          raw=os.getenv('INSTALLED_CODE','').strip()
+          if raw and (not raw.isascii() or not raw.isdecimal()):raise SystemExit('Invalid installed code')
+          code=max(2001042000+int(os.environ['GITHUB_RUN_NUMBER']),int(raw)+1 if raw else 0)
+          if code>2100000000:raise SystemExit('versionCode exceeds Android limit')
+          with open(os.environ['GITHUB_ENV'],'a') as f:f.write(f'POS7_VERSION_CODE={code}\n')
+          print('New tablet versionCode:',code)
+          PY2
+      - name: Verify original tablet release signing certificate
+        env:
+          POS7_KEYSTORE_BASE64: ${{ secrets.POS7_KEYSTORE_BASE64 }}
+          POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
+          POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
+          POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for k in POS7_KEYSTORE_BASE64 POS7_KEYSTORE_PASSWORD POS7_KEY_ALIAS POS7_KEY_PASSWORD; do test -n "${!k:-}" || { echo "Missing secret $k"; exit 1; }; done
+          umask 077
+          printf '%s' "$POS7_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/pos7-tablet-release.jks"
+          actual=$(keytool -exportcert -keystore "$RUNNER_TEMP/pos7-tablet-release.jks" -storepass:env POS7_KEYSTORE_PASSWORD -alias "$POS7_KEY_ALIAS" | sha256sum | awk '{print $1}')
+          expected='843ed618b18ec7a0cbb50f38984374540da016c41a8df8042bb8db19964d4495'
+          test "$actual" = "$expected" || { echo 'Original tablet signing certificate mismatch'; exit 1; }
+          echo "POS7_KEYSTORE_PATH=$RUNNER_TEMP/pos7-tablet-release.jks" >> "$GITHUB_ENV"
+          echo "POS7_SIGNING_CERT_SHA256=$actual" >> "$GITHUB_ENV"
+      - name: Build signed tablet APK
+        working-directory: r305-android/${{ matrix.branch }}/POS7_Tablet
+        env:
+          POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
+          POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
+          POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
+        run: gradle --no-daemon clean assembleRelease
+      - name: Verify final APK and package
+        run: |
+          set -euo pipefail
+          apk=r305-android/${{ matrix.branch }}/POS7_Tablet/app/build/outputs/apk/release/app-release.apk
+          sdk="$ANDROID_HOME/build-tools/35.0.0"
+          "$sdk/apksigner" verify --verbose "$apk"
+          python3 - <<'PY'
+          import zipfile
+          apk='r305-android/tab2/POS7_Tablet/app/build/outputs/apk/release/app-release.apk'
+          with zipfile.ZipFile(apk) as z:
+              source=z.read('assets/index.html').decode('utf-8')
+          assert source.count('المتجر الثاني — قاعدة مستقلة • 485.7.229-r346-tab2')==1
+          assert 'المتجر الثاني — قاعدة مستقلة • R215' not in source
+          assert 'POS7_RESTORE_PENDING_R305' in source
+          assert '<script src="local_restore_r323.js"></script>' in source
+          with zipfile.ZipFile(apk) as z:
+              localonly=z.read('assets/local_restore_r323.js').decode('utf8')
+              transfer=z.read('assets/restore_transfer.js').decode('utf8')
+          assert "localStorage.setItem(LOCAL,'yes')" in localonly
+          assert 'removeItem(RESTORE)' not in localonly
+          assert 'pos7_owner_publish' not in localonly
+          with zipfile.ZipFile(apk) as z:
+              same_device=z.read('assets/same_device_r324.js').decode('utf8')
+          assert '<script src="same_device_r324.js"></script>' in source
+          assert 'pos7_restore_same_device_r324' in same_device
+          assert 'pos7_restore_same_device_status_r324' in same_device
+          assert 'pos7_restore_same_device_r324' in transfer
+          assert 'pos7_restore_same_device_status_r324' in transfer
+          assert "localStorage.getItem(markerKey) &&" in transfer
+          assert "![" in transfer and "].includes(name)" in transfer
+          assert 'window.pos307HomeBatchInstalled=true' in source
+          assert 'pos7_inventory_mark_review_r346' in source
+          assert 'pos7_inventory_repair_revisions_tab2_r345' in source
+          assert 'jdcolkgzwqpwbfvcrdje' not in source
+          assert 'https://rmskuolsiqbzxuakofpb.supabase.co' in source
+          import hashlib
+          from pathlib import Path
+          assert hashlib.sha256(source.encode()).hexdigest()==Path('/tmp/r346-release-html.sha').read_text()
+          print('Signed APK contains exact final Tab2 source and preserved restore modules')
+          PY
+          "$sdk/aapt" dump badging "$apk" | grep -F "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.229-r346-${{ matrix.branch }}'"
+          actual=$("$sdk/apksigner" verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2}' | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')
+          test "$actual" = "$POS7_SIGNING_CERT_SHA256"
+          mkdir -p output
+          cp "$apk" output/POS7_Tablet_R346_${{ matrix.branch }}.apk
+          sha256sum output/*.apk > output/SHA256SUMS.txt
+          printf 'versionName=485.7.229-r346-${{ matrix.branch }}\nversionCode=%s\n' "$POS7_VERSION_CODE" > output/build-info.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: POS7-Tablet-R346-${{ matrix.branch }}-${{ env.POS7_VERSION_CODE }}
+          path: output/
+          if-no-files-found: error
+      - name: Delete temporary signing material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/pos7-tablet-release.jks"
