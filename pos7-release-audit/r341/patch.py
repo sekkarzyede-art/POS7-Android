@@ -45,15 +45,15 @@ new2="""const allMatches=Object.values(snapshot.sections.products).filter(x=>win
 assert s.count(old2)==1, 'R340 cloud matcher missing'
 s=s.replace(old2,new2,1)
 old3="const cs=Object.values(cloud).filter(c=>str(c.barcode)===bar);"
-new3="const allCloud=Object.values(cloud).filter(c=>window.POS7_R341_normalizeBarcode(c.barcode)===window.POS7_R341_normalizeBarcode(bar));
+new3="""const allCloud=Object.values(cloud).filter(c=>window.POS7_R341_normalizeBarcode(c.barcode)===window.POS7_R341_normalizeBarcode(bar));
  const exactCloud=allCloud.filter(c=>str(c.barcode)===bar);
- const cs=exactCloud.length===1?exactCloud:(allCloud.length===1?allCloud:[]);"
+ const cs=exactCloud.length===1?exactCloud:(allCloud.length===1?allCloud:[]);"""
 assert s.count(old3)==1,'cloud isSafe matcher missing'
 s=s.replace(old3,new3,1)
 old4="const ls=(local?.products||[]).filter(c=>str(c.barcode)===bar);"
-new4="const allLocal=(local?.products||[]).filter(c=>window.POS7_R341_normalizeBarcode(c.barcode)===window.POS7_R341_normalizeBarcode(bar));
+new4="""const allLocal=(local?.products||[]).filter(c=>window.POS7_R341_normalizeBarcode(c.barcode)===window.POS7_R341_normalizeBarcode(bar));
  const exactLocal=allLocal.filter(c=>str(c.barcode)===bar);
- const ls=exactLocal.length===1?exactLocal:(allLocal.length===1?allLocal:[]);"
+ const ls=exactLocal.length===1?exactLocal:(allLocal.length===1?allLocal:[]);"""
 assert s.count(old4)==1,'local isSafe matcher missing'
 s=s.replace(old4,new4,1)
 p.write_text(s,encoding='utf-8')
