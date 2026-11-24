@@ -1,0 +1,77 @@
+name: Validate Tab2 R345 inventory parity (no APK)
+on:
+  push:
+    branches: [fix/tab2-r345-parity-storage]
+    paths:
+      - '.github/workflows/r345-tab2-inventory-validation.yml'
+      - 'pos7-release-audit/r345-inventory/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reconstruct exact R324 Tab2 base
+        run: |
+          python3 pos7-release-audit/r305/build_sources.py
+          python3 pos7-release-audit/r319/optimize_boot.py
+          python3 pos7-release-audit/r320/optimize_balances.py
+          python3 pos7-release-audit/r323/apply_local_only.py
+          python3 pos7-release-audit/r324/apply_same_device.py
+      - name: Apply previously verified storage integration
+        run: |
+          app=r305-android/tab2/POS7_Tablet/app
+          python3 pos7-release-audit/r345/apply_storage_html.py "$app/src/main/assets/index.html"
+          python3 pos7-release-audit/r345/apply_native.py
+      - name: Apply exact R345 inventory candidate and preserve restore files
+        run: |
+          app=r305-android/tab2/POS7_Tablet/app
+          sha256sum "$app/src/main/assets/"{restore_transfer.js,local_restore_r323.js,same_device_r324.js} > /tmp/restore-sha
+          python3 pos7-release-audit/r345-inventory/apply_inventory.py "$app/src/main/assets/index.html"
+          sha256sum -c /tmp/restore-sha
+      - name: Validate inventory integration and all inline JavaScript
+        run: |
+          python3 - <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+          import hashlib,subprocess
+          class P(HTMLParser):
+              def __init__(self): super().__init__();self.active=False;self.s=[]
+              def handle_starttag(self,t,a):
+                  if t=='script': self.active=True;self.s.append('')
+              def handle_endtag(self,t):
+                  if t=='script': self.active=False
+              def handle_data(self,d):
+                  if self.active:self.s[-1]+=d
+          f=Path('r305-android/tab2/POS7_Tablet/app/src/main/assets/index.html')
+          assert hashlib.sha256(f.read_bytes()).hexdigest()=='a7e369d4d55b237bbbe0cf300ed5a8613185ab8fbb5d68c1f446e6b07033210b'
+          h=f.read_text()
+          assert 'jdcolkgzwqpwbfvcrdje' not in h
+          assert 'https://rmskuolsiqbzxuakofpb.supabase.co' in h
+          assert "if(localStorage.getItem('POS7_RESTORE_PENDING_R305'))return false;" in h
+          assert h.count('id="pos7-r212-batch-inventory"')==1
+          assert 'const MAX_BATCH=30;' in h
+          assert 'pos7_inventory_commit_batch_r254' in h
+          assert 'pos7_inventory_commit_batch_atomic_r341' not in h
+          assert 'pos7_inventory_prepare_tab2_r345' in h
+          assert 'pos7_inventory_repair_revisions_tab2_r345' in h
+          assert 'await migrateLegacy(job)' in h
+          assert 'POS7_R345_REPAIR_JOURNAL_V1' in h
+          assert 'POS7_R345_REPAIR_UNRESOLVED_V1' in h
+          assert 'POS7_R344_productHeld' in h
+          assert 'window.pos310Installed=true' in h
+          assert 'R213: اعتماد دفعة الجرد جارٍ؛ لا تغيّر المخزون حتى انتهاء الدفعة' not in h
+          for tag in ['pos7-r322-native-state-storage','pos7-r331-storage-settings','pos7-r333-storage-dashboard','pos7-r342-no-duplicate-sku']:
+              assert h.count('id="'+tag+'"')==1
+          p=P();p.feed(h);assert len(p.s)==339
+          for i,s in enumerate(p.s):
+              if s.strip():
+                  r=subprocess.run(['node','--check'],input=s,text=True,capture_output=True)
+                  if r.returncode:raise SystemExit(f'Script {i}: {r.stderr}')
+          print('Exact R345 inventory candidate, 339 scripts, store identity and restore guards verified')
+          PY
+      - name: Test integrated storage regression
+        run: node pos7-release-audit/r345/storage_tests.cjs r305-android/tab2/POS7_Tablet/app/src/main/assets/index.html
