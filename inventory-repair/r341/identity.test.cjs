@@ -1,0 +1,12 @@
+const assert=require('node:assert/strict');
+const {normalize,inspect,safeQuantity}=require('./identity.cjs');
+assert.equal(normalize('08000500168042'),normalize('8000500168042'));
+assert.equal(normalize('0000'),'0');
+assert.equal(normalize('AB001'),'AB001');
+const rows=[{id:'A',name:'بيض كيندر',barcode:'08000500168042',stock:5},{id:'B',name:'كيندر جوي',barcode:'8000500168042',stock:0}];
+assert.equal(inspect(rows,'8000500168042').status,'ambiguous');
+assert.equal(inspect(rows,'08000500168042',[{alias_barcode:'08000500168042',primary_product_id:'A',status:'approved'}]).product.id,'A');
+assert.equal(rows[0].stock,5);assert.equal(rows[1].stock,0);
+assert.equal(safeQuantity(10,[{id:'sale1',delta:-2},{id:'return2',delta:1}]),9);
+assert.throws(()=>safeQuantity(10,[{id:'sale1',delta:-2},{id:'sale1',delta:-2}]),/duplicate/);
+console.log('R341 identity guard tests passed');
