@@ -124,14 +124,14 @@ jobs:
           app=r321-android/tab1/POS7_Tablet/app
           python3 pos7-release-audit/r340/patch.py "$app/src/main/assets/index.html"
           node pos7-release-audit/r340/test.cjs "$app/src/main/assets/index.html"
-          sed -i 's/485.7.229-r339-tab1/485.7.229-r341-tab1/g' "$app/build.gradle"
+          sed -i 's/485.7.229-r339-tab1/485.7.229-r340-tab1/g' "$app/build.gradle"
       - name: Test R341 identity normalization and safe reconciliation
         run: |
           node inventory-repair/r341/identity.test.cjs
           python3 pos7-release-audit/r341/patch.py r321-android/tab1/POS7_Tablet/app/src/main/assets/index.html
           node pos7-release-audit/r341/test.cjs r321-android/tab1/POS7_Tablet/app/src/main/assets/index.html
           node pos7-release-audit/r340/test.cjs r321-android/tab1/POS7_Tablet/app/src/main/assets/index.html
-          sed -i 's/485.7.229-r341-tab1/485.7.229-r341-tab1/g' r321-android/tab1/POS7_Tablet/app/build.gradle
+          sed -i 's/485.7.229-r340-tab1/485.7.229-r341-tab1/g' r321-android/tab1/POS7_Tablet/app/build.gradle
       - name: Set upgrade versionCode
         env:
           INSTALLED_CODE: ${{ inputs.installed_version_code }}
