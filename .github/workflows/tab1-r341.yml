@@ -136,6 +136,8 @@ jobs:
         run: |
           python3 pos7-release-audit/r342/patch.py r321-android/tab1/POS7_Tablet/app/src/main/assets/index.html
           node pos7-release-audit/r342/atomic.test.cjs r321-android/tab1/POS7_Tablet/app/src/main/assets/index.html
+          node pos7-release-audit/r342/sku_guard.test.cjs r321-android/tab1/POS7_Tablet/app/src/main/assets/index.html
+          node pos7-release-audit/r342/import.test.cjs r321-android/tab1/POS7_Tablet/app/src/main/assets/index.html
           node pos7-release-audit/r340/test.cjs r321-android/tab1/POS7_Tablet/app/src/main/assets/index.html
           sed -i 's/485.7.229-r341-tab1/485.7.229-r342-tab1/g' r321-android/tab1/POS7_Tablet/app/build.gradle
       - name: Set upgrade versionCode
