@@ -1,0 +1,16 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
+const h=fs.readFileSync(process.argv[2],'utf8'), script=id=>h.match(new RegExp('<script id="'+id+'">([\\s\\S]*?)</script>'))[1];
+let saves=0,fail=false,notifications=0;
+const c={console,Date,Map,Set,Number,String,Math,JSON,Error,Object,window:null,document:{getElementById(){return null},querySelector(){return null}},localStorage:{getItem(){return '1'}},toast(){},mcTransfer:null,pos222Exchange:null,pos7R102SaveStateDirect(){if(fail)throw Error('disk full');saves++},mcBalance(a){return c.state.mcLedger.filter(x=>x.account===a).reduce((s,x)=>s+x.amount,0)},state:{},POS7_CHART_OF_ACCOUNTS:[],v250Can:()=>true,pos265InvoiceDebtUSD:x=>x.debt};
+c.window=c;vm.createContext(c);for(const id of ['pos7-v204-strict-double-entry','pos7-r367-transaction'])vm.runInContext(script(id),c);
+vm.runInContext(h.slice(h.indexOf('function pos98AllRefs()'),h.indexOf('function pos98Log(')),c);
+c.mcPost=(parts,sign,ref,title,party,date)=>{for(const p of parts)c.state.mcLedger.push({...p,amount:p.amount*sign,ref,title,party,date});c.POS7R367Txn.defer(()=>notifications++);};
+vm.runInContext(script('pos7-r365-returns-engine'),c);
+function reset(){saves=0;fail=false;notifications=0;let item={id:1,barcode:'001',name:'P',qty:5,sell:10,cost:8};c.state={docSequences:{},fxRate:90000,products:[{id:1,barcode:'001',name:'P',stock:10}],sales:[{id:1,number:'SAL-1',customer:'A',date:'2026-11-01',currency:'USD',debt:5,total:50,paid:45,items:[item]}],purchases:[{id:2,number:'PUR-1',supplier:'B',date:'2026-11-01',currency:'USD',debt:0,total:40,paid:40,items:[{...item}]}],customers:{A:5},suppliers:{B:0},mcLedger:[{account:'cashier_usd',amount:100},{account:'main_usd',amount:100}],doubleEntryJournal:[]};}
+function commit(sale=true,qty=1,token='r1',settle='cash'){let i=c.state[sale?'sales':'purchases'][0];return c.POS7R365.commit(sale,[{invoice:i,index:0,qty}],new Map([[i.id,settle]]),'cashier_usd',90000,token)}
+reset();let r=commit()[0];assert.equal(r.debtReduction,5);assert.equal(r.cashRefund,5);assert.equal(c.mcBalance('cashier_usd'),95);assert.equal(c.state.products[0].stock,11);commit();assert.equal(saves,1);assert.equal(notifications,1);assert.equal(c.state.returnVouchers.length,1);let ledger=JSON.stringify(c.state.mcLedger);c.pos7RebuildDoubleEntryJournal();assert.equal(JSON.stringify(c.state.mcLedger),ledger);assert(c.state.doubleEntryJournal.some(j=>j.reference===r.number));
+reset();c.state.sales[0].debt=25;r=commit()[0];assert.equal(r.cashRefund,0);assert.equal(c.state.returnVouchers.length,0);
+reset();r=commit(false)[0];assert.equal(r.cashRefund,8);assert.equal(c.mcBalance('cashier_usd'),108);assert.equal(c.state.products[0].stock,9);
+reset();c.state.supplierPayments=[{ref:'PAY-000099',cancelled:true}];c.state.returnVouchers=[{number:'PAY-000100',cancelled:true}];commit();assert.equal(c.state.returnVouchers[1].number,'PAY-000101');
+reset();let before=JSON.stringify(c.state);fail=true;assert.equal(commit(),null);assert.equal(JSON.stringify(c.state),before);assert.equal(notifications,0);
+console.log('R367 accounting and rollback checks passed');
