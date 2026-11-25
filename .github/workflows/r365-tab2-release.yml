@@ -1,5 +1,5 @@
 
-name: Build signed Tab2 R365 live invoice returns
+name: Build signed Tab2 R365 final live invoice returns
 on:
   push:
     branches: [fix/tab2-r365-live-returns]
