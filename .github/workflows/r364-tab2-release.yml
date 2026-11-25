@@ -211,7 +211,21 @@ jobs:
           POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
           POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
           POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
-        run: gradle --no-daemon clean assembleRelease
+        run: |
+          if ! gradle --no-daemon clean assembleRelease > "$RUNNER_TEMP/tab2-gradle.log" 2>&1; then
+            cat "$RUNNER_TEMP/tab2-gradle.log"
+            grep -q 'status code 429' "$RUNNER_TEMP/tab2-gradle.log" || exit 1
+            python3 - <<'PY'
+          from pathlib import Path
+          p=Path('settings.gradle')
+          s=p.read_text()
+          assert 'mavenCentral()' in s
+          p.write_text(s.replace('mavenCentral()', "maven { url 'https://maven-central.storage-download.googleapis.com/maven2' }"))
+          PY
+            gradle --no-daemon clean assembleRelease
+          else
+            cat "$RUNNER_TEMP/tab2-gradle.log"
+          fi
       - name: Verify final APK and package
         run: |
           set -euo pipefail
