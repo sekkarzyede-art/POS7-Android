@@ -47,3 +47,7 @@ reset();commit(false,'credit','main_usd');assert.equal(context.pos265SupplierBal
 reset();commit(false,'cash','main_usd');assert.equal(context.pos265SupplierBalanceUSD('مورد'),0);
 reset();context.state.purchases[0].debt=50;commit(false,'cash','main_usd');assert.equal(context.pos265SupplierBalanceUSD('مورد'),42);
 console.log('Customer and supplier balances verified for credit, cash and later payments');
+reset();let first=commit(true,'credit','cashier_usd','one');let second=commit(true,'credit','cashier_usd','two');assert.equal(second[0].number,'SRT-000002');assert.notEqual(first[0].id,second[0].id);
+console.log('Sequential return numbers verified');
+reset();first=commit(true,'credit','cashier_usd','one');context.state.salesReturns[0].cancelled=true;second=commit(true,'credit','cashier_usd','two');assert.equal(second[0].number,'SRT-000002');
+console.log('Cancelled historical numbers remain reserved');
