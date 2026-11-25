@@ -75,3 +75,9 @@ result=engine.commit(true,[item(),{invoice:context.state.sales[1],index:0,qty:1}
 assert.equal(result.reduce((s,x)=>s+x.debtReduction,0),5);assert.equal(result.reduce((s,x)=>s+x.cashRefund,0),15);
 assert.equal(new Set(context.state.returnVouchers.map(x=>x.id)).size,2);
 console.log('Shared voucher sequence, single cash effect, auto excess, account-wide and batch allocation passed');
+// Notifications queued through mcPost are released only after durable save.
+let notices=[];const oldPost=context.mcPost;
+context.mcPost=function(...args){oldPost(...args);context.POS7R361Txn.defer(()=>notices.push({ref:args[2],title:args[3],sign:args[1]}));};
+reset();fail=true;assert.equal(commit(),null);assert.equal(notices.length,0);
+fail=false;result=commit();assert.equal(notices.length,1);assert(notices[0].title.includes('خروج -5.00$'));commit();assert.equal(notices.length,1);
+console.log('Cash notification after durable save only, once per request, signed outgoing amount verified');
