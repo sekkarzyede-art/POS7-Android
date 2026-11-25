@@ -1,5 +1,5 @@
 
-name: Build signed Tab2 R366 return vouchers
+name: Build signed Tab2 R366 return vouchers and signed cash notice
 on:
   push:
     branches: [fix/tab2-r366-return-vouchers]
