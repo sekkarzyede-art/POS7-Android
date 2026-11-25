@@ -1,0 +1,305 @@
+
+name: Build signed Tab2 R365 live invoice returns
+on:
+  push:
+    branches: [fix/tab2-r365-live-returns]
+    paths: ['.github/workflows/r365-tab2-release.yml']
+  workflow_dispatch:
+    inputs:
+      installed_version_code:
+        description: 'Optional actual installed Tab2 versionCode'
+        required: false
+        default: ''
+        type: string
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      matrix:
+        branch: [tab2]
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - uses: android-actions/setup-android@v4
+      - run: sdkmanager --install 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Prepare restored-backup transfer sources
+        run: python3 pos7-release-audit/r305/build_sources.py
+      - name: Apply R324 safe accounting boot patch
+        run: python3 pos7-release-audit/r319/optimize_boot.py
+      - name: Apply R324 conditional cached USD balances persistence
+        run: python3 pos7-release-audit/r320/optimize_balances.py
+      - name: Apply R323 offline-only local backup approval for Tab2
+        run: python3 pos7-release-audit/r323/apply_local_only.py
+      - name: Add R324 same-device-only cloud reconciliation gated by R305
+        run: python3 pos7-release-audit/r324/apply_same_device.py
+      - name: Reconstruct previously verified integrated Tab2 source
+        run: |
+          app=r305-android/tab2/POS7_Tablet/app
+          python3 pos7-release-audit/r345/apply_storage_html.py "$app/src/main/assets/index.html"
+          python3 pos7-release-audit/r345/apply_native.py
+          python3 pos7-release-audit/r345-inventory/apply_inventory.py "$app/src/main/assets/index.html"
+          sha256sum "$app/src/main/assets/"{restore_transfer.js,local_restore_r323.js,same_device_r324.js} > /tmp/tab2-restore-sha
+      - name: Apply exact receipt edits and native image share
+        run: |
+          app=r305-android/tab2/POS7_Tablet/app
+          python3 pos7-release-audit/r345-print/apply_print.py "$app/src/main/assets/index.html"
+          python3 pos7-release-audit/r345-print/apply_native_share.py "$app/src/main"
+          sha256sum -c /tmp/tab2-restore-sha
+          node pos7-release-audit/r345-print/print_tests.cjs "$app/src/main/assets/index.html"
+          node pos7-release-audit/r345/storage_tests.cjs "$app/src/main/assets/index.html"
+      - name: Apply exact R346 review outcome and test final integrated source
+        run: |
+          app=r305-android/tab2/POS7_Tablet/app
+          python3 pos7-release-audit/r346/apply_review.py "$app/src/main/assets/index.html"
+          sha256sum -c /tmp/tab2-restore-sha
+          node pos7-release-audit/r345-print/print_tests.cjs "$app/src/main/assets/index.html"
+          node pos7-release-audit/r345/storage_tests.cjs "$app/src/main/assets/index.html"
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          p=Path('r305-android/tab2/POS7_Tablet/app/src/main/assets/index.html')
+          assert hashlib.sha256(p.read_bytes()).hexdigest()=='0307d17448900cdc5c276296a8263d05690209f2d8e913196b2d49555bebd2e8'
+          h=p.read_text()
+          for marker in ['pos7_inventory_mark_review_r346','R346_review_ack_unverified','verifiedReview(found[0],id)','const MAX_BATCH=30;','pos7_inventory_commit_batch_r254','POS7_R345_REPAIR_JOURNAL_V1','POS7_R344_productHeld','POS7_RESTORE_PENDING_R305','pos7_inventory_repair_revisions_tab2_r345','pos7_inventory_prepare_tab2_r345','cloudStatus:\'rejected\'']:
+              assert marker in h,marker
+          assert 'R213: اعتماد دفعة الجرد جارٍ؛ لا تغيّر المخزون حتى انتهاء الدفعة' not in h
+          print('Exact tested R346 candidate and inventory guards verified')
+          PY
+      - name: Apply R348 inventory wait coordination and validate actual button handler
+        run: |
+          app=r305-android/tab2/POS7_Tablet/app
+          python3 pos7-release-audit/r348/apply_wait.py "$app/src/main/assets/index.html"
+          sha256sum -c /tmp/tab2-restore-sha
+          node pos7-release-audit/r348/wait_tests.cjs "$app/src/main/assets/index.html"
+          node pos7-release-audit/r348/inventory_tests.cjs "$app/src/main/assets/index.html"
+          node pos7-release-audit/r345-print/print_tests.cjs "$app/src/main/assets/index.html"
+          node pos7-release-audit/r345/storage_tests.cjs "$app/src/main/assets/index.html"
+      - name: Reconstruct exact locally tested R361 candidate
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json
+          p=Path('r305-android/tab2/POS7_Tablet/app/src/main/assets/index.html')
+          raw=p.read_bytes()
+          assert hashlib.sha256(raw).hexdigest()=='70c111b23ff28c8dc8fc4873e453b92ffcbbc34e3c307cf697356d8701ea0b79'
+          lines=raw.decode('utf-8').splitlines(keepends=True)
+          edits=[]
+          for n,sha in [(1,'d79a6acb5c18192c2ccc7210d7c15b774bf2117a98a6dbb2a5f8a20db7325fdf'),(2,'3fd965011402eba2c9f6fdd3d822fc702facb22d6f88cc0c630ae3d3e6fa4d3c')]:
+              b=Path(f'pos7-release-audit/r361/edits{n}.json').read_bytes()
+              assert hashlib.sha256(b).hexdigest()==sha
+              edits.extend(json.loads(b))
+          assert len(edits)==82
+          for i,j,s in reversed(edits):
+              lines[i:j]=[s]
+          data=''.join(lines).encode('utf-8')
+          assert hashlib.sha256(data).hexdigest()=='7dd730e608fcb1ce6570511c5698c138f675d93b7855b10b79015f373e5b50cc'
+          p.write_bytes(data)
+          print('Exact R361 candidate SHA256 verified')
+          PY
+          sha256sum -c /tmp/tab2-restore-sha
+      - name: Apply R362 confirmed missing revision recovery and run tests
+        run: |
+          app=r305-android/tab2/POS7_Tablet/app
+          python3 pos7-release-audit/r362/patch_tablet.py "$app/src/main/assets/index.html"
+          sha256sum -c /tmp/tab2-restore-sha
+          node pos7-release-audit/r362/test_tablet_r362.cjs "$app/src/main/assets/index.html"
+          node pos7-release-audit/r348/inventory_tests.cjs "$app/src/main/assets/index.html"
+      - name: Verify all scripts and private image provider
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from html.parser import HTMLParser
+          import hashlib,subprocess,xml.etree.ElementTree as ET
+          app=Path('r305-android/tab2/POS7_Tablet/app/src/main')
+          f=app/'assets/index.html'
+          assert hashlib.sha256(f.read_bytes()).hexdigest()=='debd6fde52290e901986abef91da68ef296d2ded731fa28d6a4f9f6568ac9f2b'
+          h=f.read_text()
+          assert 'jdcolkgzwqpwbfvcrdje' not in h and 'https://rmskuolsiqbzxuakofpb.supabase.co' in h
+          assert 'عليكم مبلغ' not in h
+          assert h.count('id="saleDeliveryTile"')==1
+          class P(HTMLParser):
+              def __init__(self):super().__init__();self.active=False;self.s=[]
+              def handle_starttag(self,t,a):
+                  if t=='script':self.active=True;self.s.append('')
+              def handle_endtag(self,t):
+                  if t=='script':self.active=False
+              def handle_data(self,d):
+                  if self.active:self.s[-1]+=d
+          p=P();p.feed(h)
+          for i,s in enumerate(p.s):
+              if s.strip():
+                  r=subprocess.run(['node','--check'],input=s,text=True,capture_output=True)
+                  if r.returncode:raise SystemExit(f'Script {i}: {r.stderr}')
+          ns='{http://schemas.android.com/apk/res/android}'
+          providers=[x for x in ET.parse(app/'AndroidManifest.xml').iter('provider') if x.get(ns+'name')=='.SaleReceiptProvider']
+          assert len(providers)==1 and providers[0].get(ns+'exported')=='false' and providers[0].get(ns+'grantUriPermissions')=='true'
+          paths=list(ET.parse(app/'res/xml/sale_image_paths.xml').getroot())
+          assert len(paths)==1 and paths[0].tag=='cache-path' and paths[0].get('path')=='sale-receipts/'
+          print('Verified source and private provider; inline scripts:',len(p.s))
+          PY
+      - name: Set R365 release identity without changing business logic
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          app=Path('r305-android/tab2/POS7_Tablet/app')
+          h=app/'src/main/assets/index.html'; g=app/'build.gradle'
+          b=h.read_bytes(); old='485.7.229-r345-tab2'.encode(); new='485.7.229-r365-tab2'.encode()
+          assert b.count(old)>=1 and new not in b
+          h.write_bytes(b.replace(old,new))
+          raw=g.read_text(); assert raw.count("versionName '485.7.229-r345-tab2'")==1
+          g.write_text(raw.replace("versionName '485.7.229-r345-tab2'","versionName '485.7.229-r365-tab2'"))
+          assert hashlib.sha256(h.read_bytes().replace(new,old)).hexdigest()=='debd6fde52290e901986abef91da68ef296d2ded731fa28d6a4f9f6568ac9f2b'
+          Path('/tmp/r362-release-html.sha').write_text(hashlib.sha256(h.read_bytes()).hexdigest())
+          PY
+      - name: Install integrated returns preview on verified R362 base
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          p=Path('r305-android/tab2/POS7_Tablet/app/src/main/assets/index.html')
+          h=p.read_text()
+          for old,new in [("  <div class=\"home-tile\" onclick=\"openPage('suppliers')\">","  <button type=\"button\" class=\"home-tile\" onclick=\"pos7R365OpenReturns(true)\"><span class=\"home-icon\">↩</span><span>مرتجع مبيعات</span></button>\n  <button type=\"button\" class=\"home-tile\" onclick=\"pos7R365OpenReturns(false)\"><span class=\"home-icon\">↩</span><span>مرتجع مشتريات</span></button>\n  <div class=\"home-tile\" onclick=\"openPage('suppliers')\">"),(" let act=cancelled(x)?view:(view+edit+ret+cancel);"," let testReturn='<button class=\"soft\" onclick=\"pos7R365OpenReturns('+(sale?'true':'false')+','+JSON.stringify(x.id)+')\">معاينة المرتجع</button>';\n let act=cancelled(x)?view:(view+edit+ret+testReturn+cancel);")]:
+              assert h.count(old)==1,old
+              h=h.replace(old,new)
+          import base64
+          h=h+'\n'+base64.b64decode('PHN0eWxlPgojcjM2NERpYWxvZ3t3aWR0aDptaW4oNzYwcHgsOTR2dyk7bWF4LWhlaWdodDo4OHZoO2JvcmRlcjoxcHggc29saWQgI2JmY2VlMDtib3JkZXItcmFkaXVzOjE2cHg7Y29sb3I6IzE0MmE0NztwYWRkaW5nOjE4cHg7b3ZlcmZsb3c6YXV0b30KI3IzNjREaWFsb2c6OmJhY2tkcm9we2JhY2tncm91bmQ6IzBmMjEzOWFhfQojcjM2NERpYWxvZyBoZWFkZXIsI3IzNjREaWFsb2cgLnIzNjQtcm93e2Rpc3BsYXk6ZmxleDthbGlnbi1pdGVtczpjZW50ZXI7anVzdGlmeS1jb250ZW50OnNwYWNlLWJldHdlZW47Z2FwOjEycHh9CiNyMzY0RGlhbG9nIGxhYmVse2Rpc3BsYXk6YmxvY2s7bWFyZ2luOjEwcHggMH0KI3IzNjREaWFsb2cgaW5wdXQ6bm90KFt0eXBlPWNoZWNrYm94XSksI3IzNjREaWFsb2cgc2VsZWN0e3dpZHRoOjEwMCU7bWluLWhlaWdodDo0NHB4fQojcjM2NERpYWxvZyBhcnRpY2xle2JvcmRlcjoxcHggc29saWQgI2Q1ZTBlYztib3JkZXItcmFkaXVzOjEycHg7cGFkZGluZzoxMnB4O21hcmdpbjoxMHB4IDB9CiNyMzY0RGlhbG9nIC5yMzY0LXJvd3twYWRkaW5nOjZweCAwO2JvcmRlci1ib3R0b206MXB4IHNvbGlkICNlM2ViZjN9CiNyMzY0RGlhbG9nIC5yMzY0LXF0eXtkaXNwbGF5OmZsZXg7YWxpZ24taXRlbXM6Y2VudGVyO2dhcDoxMHB4O21hcmdpbjo4cHggMH0KI3IzNjREaWFsb2cgLnIzNjQtcXR5IGJ1dHRvbnttaW4td2lkdGg6NDRweDttaW4taGVpZ2h0OjQ0cHh9Cjwvc3R5bGU+CjxzY3JpcHQgaWQ9InBvczctcjM2NC1yZXR1cm4tY2FyZHMiPgooKCkgPT4gewondXNlIHN0cmljdCc7CmNvbnN0IGFjdGl2ZT14PT54JiYheC5jYW5jZWxsZWQmJiF4LmNhbmNlbGVkJiYheC52b2lkZWQmJiF4LnJldmVyc2VkJiYhL14oY2FuY2VsbGVkfGNhbmNlbGVkfHZvaWRlZCkkL2kudGVzdCh4LnN0YXR1c3x8JycpOwpjb25zdCBzYW1lPShhLGIpPT5hIT1udWxsJiZiIT1udWxsJiZTdHJpbmcoYSk9PT1TdHJpbmcoYik7CmNvbnN0IG5vcm1hbD12PT5TdHJpbmcodj8/JycpLnRyaW0oKS50b0xvd2VyQ2FzZSgpLnJlcGxhY2UoL1vZoC3ZqduwLdu5XS9nLGM9PlN0cmluZyhjLmNoYXJDb2RlQXQoMCktKGM8PSfZqSc/MHg2NjA6MHg2ZjApKSk7CmNvbnN0IGtleT14PT54LnByb2R1Y3RJZD8/eC5pZDsKY29uc3QgbWF0Y2hlcz0oYSxiKT0+a2V5KGEpIT1udWxsJiZrZXkoYikhPW51bGw/c2FtZShrZXkoYSksa2V5KGIpKTpCb29sZWFuKG5vcm1hbChhLmJhcmNvZGUpKSYmbm9ybWFsKGEuYmFyY29kZSk9PT1ub3JtYWwoYi5iYXJjb2RlKTsKY29uc3Qgbm89eD0+eC5udW1iZXJ8fHgubm98fHgucmVjb3JkTm98fHgucmVmfHx4LmlkOwpjb25zdCBtb25leT1jPT4nJCcrKGMvMTAwKS50b0ZpeGVkKDIpOwpjb25zdCBjZW50cz12YWx1ZT0+TWF0aC5yb3VuZChOdW1iZXIodmFsdWUpKjEwMCk7CmZ1bmN0aW9uIG5vZGUocGFyZW50LHRhZyx0ZXh0PScnKXsKIGNvbnN0IGU9ZG9jdW1lbnQuY3JlYXRlRWxlbWVudCh0YWcpO2UudGV4dENvbnRlbnQ9dGV4dDtwYXJlbnQuYXBwZW5kKGUpO3JldHVybiBlOwp9CmZ1bmN0aW9uIGJ1dHRvbihwYXJlbnQsbGFiZWwsYWN0aW9uKXsKIGNvbnN0IGI9bm9kZShwYXJlbnQsJ2J1dHRvbicsbGFiZWwpO2IudHlwZT0nYnV0dG9uJztiLmNsYXNzTmFtZT0nc29mdCc7Yi5vbmNsaWNrPWFjdGlvbjtyZXR1cm4gYjsKfQpmdW5jdGlvbiBvcHRpb24oc2VsZWN0LHZhbHVlLGxhYmVsKXtub2RlKHNlbGVjdCwnb3B0aW9uJyxsYWJlbCkudmFsdWU9dmFsdWU7fQpmdW5jdGlvbiByb3cocGFyZW50LGxhYmVsLHZhbHVlKXsKIGNvbnN0IGRpdj1ub2RlKHBhcmVudCwnZGl2Jyk7ZGl2LmNsYXNzTmFtZT0ncjM2NC1yb3cnO25vZGUoZGl2LCdzcGFuJyxsYWJlbCk7bm9kZShkaXYsJ2InLHZhbHVlKS5kaXI9J2F1dG8nOwp9CmZ1bmN0aW9uIHNvdXJjZVByaWNlKHNhbGUsaW52b2ljZSxsaW5lKXsKIGNvbnN0IHByaWNlPU51bWJlcihzYWxlPyhsaW5lLnNlbGw/P2xpbmUucHJpY2UpOmxpbmUuY29zdCk7CiBpZighTnVtYmVyLmlzRmluaXRlKHByaWNlKXx8cHJpY2U8MClyZXR1cm4gTmFOOwogY29uc3QgZGlzY291bnQ9TnVtYmVyKGludm9pY2UuZGlzY291bnR8fDApOwogaWYoIXNhbGV8fCFkaXNjb3VudClyZXR1cm4gcHJpY2U7CiBjb25zdCBncm9zcz1OdW1iZXIoaW52b2ljZS5ncm9zc1RvdGFsKTsKIHJldHVybiBncm9zcz4wJiZkaXNjb3VudD49MCYmZGlzY291bnQ8PWdyb3NzP3ByaWNlKihncm9zcy1kaXNjb3VudCkvZ3Jvc3M6TmFOOwp9CndpbmRvdy5wb3M3UjM2NE9wZW5SZXR1cm5zPWZ1bmN0aW9uKHNhbGUsaW52b2ljZUlkKXsKIGlmKCF3aW5kb3cudjI1MENhbj8uKHNhbGU/J3NhbGVzJzoncHVyY2hhc2UnKSlyZXR1cm4gdG9hc3QoJ9mE2Kcg2KrZiNis2K8g2LXZhNin2K3ZitipINmE2YfYsNmHINin2YTYqNi32KfZgtipLicpOwogY29uc3QgcGFydHlLZXk9c2FsZT8nY3VzdG9tZXInOidzdXBwbGllcic7CiBjb25zdCBkb2NzPShzYWxlP3N0YXRlLnNhbGVzOnN0YXRlLnB1cmNoYXNlcyl8fFtdOwogY29uc3QgcmV0dXJucz0oc2FsZT9zdGF0ZS5zYWxlc1JldHVybnM6Wy4uLihzdGF0ZS5wdXJjaGFzZVJldHVybnN8fFtdKSwuLi4oc3RhdGUucHVyY2hhc2VzUmV0dXJuc3x8W10pLC4uLihzdGF0ZS5zdXBwbGllclJldHVybnN8fFtdKV0pfHxbXTsKIGNvbnN0IG9yaWdpbmFsPWludm9pY2VJZD09bnVsbD9udWxsOmRvY3MuZmluZCh4PT5hY3RpdmUoeCkmJnNhbWUoeC5pZCxpbnZvaWNlSWQpKTsKIGlmKGludm9pY2VJZCE9bnVsbCYmIW9yaWdpbmFsKXJldHVybiB0b2FzdCgn2KfZhNmB2KfYqtmI2LHYqSDYp9mE2KPYtdmE2YrYqSDYutmK2LEg2YXYqtin2K3YqS4nKTsKIGRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCdyMzY0RGlhbG9nJyk/LnJlbW92ZSgpOwogY29uc3QgZGlhbG9nPW5vZGUoZG9jdW1lbnQuYm9keSwnZGlhbG9nJyk7ZGlhbG9nLmlkPSdyMzY0RGlhbG9nJztkaWFsb2cuZGlyPSdydGwnOwogY29uc3QgaGVhZGluZz1ub2RlKGRpYWxvZywnaGVhZGVyJyk7CiBub2RlKGhlYWRpbmcsJ2gyJyxzYWxlPyfZhdix2KrYrNi5INmF2KjZiti52KfYqic6J9mF2LHYqtis2Lkg2YXYtNiq2LHZitin2KonKTsKIGJ1dHRvbihoZWFkaW5nLCfYpdi62YTYp9mCJywoKT0+ZGlhbG9nLmNsb3NlKCkpOwogZGlhbG9nLm9uY2xvc2U9KCk9PmRpYWxvZy5yZW1vdmUoKTsKIG5vZGUoZGlhbG9nLCdwJywn2YXYudin2YrZhtipINiq2KfYqNmiIMK3INin2LnYqtmF2KfYryDYqtis2LHZitio2Yog2K/Yp9iu2YQg2YfYsNmHINin2YTYrNmE2LPYqScpOwogY29uc3QgcGFydHk9bm9kZShub2RlKGRpYWxvZywnbGFiZWwnLHNhbGU/J9in2YTYudmF2YrZhCc6J9in2YTZhdmI2LHYrycpLCdzZWxlY3QnKTsKIG9wdGlvbihwYXJ0eSwnJywn2KfYrtiq2LEgJysoc2FsZT8n2KfZhNi52YXZitmEJzon2KfZhNmF2YjYsdivJykpOwogZm9yKGNvbnN0IG5hbWUgb2YgWy4uLm5ldyBTZXQoZG9jcy5maWx0ZXIoYWN0aXZlKS5tYXAoeD0+eFtwYXJ0eUtleV0pLmZpbHRlcihCb29sZWFuKSldLnNvcnQoKGEsYik9PmEubG9jYWxlQ29tcGFyZShiLCdhcicpKSlvcHRpb24ocGFydHksbmFtZSxuYW1lKTsKIGlmKG9yaWdpbmFsKXBhcnR5LnZhbHVlPW9yaWdpbmFsW3BhcnR5S2V5XTsKIGNvbnN0IGZvcm09bm9kZShkaWFsb2csJ2Zvcm0nKSxxdWVyeT1ub2RlKG5vZGUoZm9ybSwnbGFiZWwnLCfYp9iz2YUg2KfZhNi12YbZgSDYo9mIINin2YTYqNin2LHZg9mI2K8nKSwnaW5wdXQnKTsKIHF1ZXJ5LmF1dG9jb21wbGV0ZT0nb2ZmJztxdWVyeS5wbGFjZWhvbGRlcj0n2KfZg9iq2Kgg2KfYs9mFINin2YTYtdmG2YEg2KPZiCDYp9mF2LPYrSDYp9mE2KjYp9ix2YPZiNivJzsKIG5vZGUoZm9ybSwnYnV0dG9uJywn2KjYrdirJyk7CiBjb25zdCBzdGF0dXM9bm9kZShkaWFsb2csJ3AnKTtzdGF0dXMuc2V0QXR0cmlidXRlKCdyb2xlJywnc3RhdHVzJyk7CiBjb25zdCByZXN1bHRzPW5vZGUoZGlhbG9nLCdkaXYnKSxiYXNrZXQ9bm9kZShkaWFsb2csJ2RpdicpLHByZXZpZXc9bm9kZShkaWFsb2csJ2RpdicpLGhpc3Rvcnk9bm9kZShkaWFsb2csJ2RpdicpOwogbGV0IGNhcnQ9W10scmVjb3JkZWQ9W10sc2V0dGluZ3M9bmV3IE1hcCgpLHNlcXVlbmNlPTA7CgogZnVuY3Rpb24gaW52b2ljZUxpbmVzKCl7CiAgcmV0dXJuIGRvY3MuZmlsdGVyKHg9PmFjdGl2ZSh4KSYmeFtwYXJ0eUtleV09PT1wYXJ0eS52YWx1ZSkKICAgLnNvcnQoKGEsYik9PkRhdGUucGFyc2UoYi5kYXRlKS1EYXRlLnBhcnNlKGEuZGF0ZSkpCiAgIC5mbGF0TWFwKGludm9pY2U9PihpbnZvaWNlLml0ZW1zfHxbXSkubWFwKChsaW5lLGluZGV4KT0+KHtpbnZvaWNlLGxpbmUsaW5kZXgscHJpY2U6c291cmNlUHJpY2Uoc2FsZSxpbnZvaWNlLGxpbmUpfSkpKQogICAuZmlsdGVyKHNvdXJjZT0+TnVtYmVyLmlzRmluaXRlKHNvdXJjZS5wcmljZSkpOwogfQogZnVuY3Rpb24gcmVtYWluaW5nKHNvdXJjZSxleGNlcHQpewogIGNvbnN0IHtpbnZvaWNlLGxpbmUsaW5kZXh9PXNvdXJjZTsKICBjb25zdCB1c2VkPXJldHVybnMuZmlsdGVyKHI9PmFjdGl2ZShyKSYmKHNhbWUoci5pbnZvaWNlSWQsaW52b2ljZS5pZCl8fHNhbWUoci5pbnZvaWNlTnVtYmVyLG5vKGludm9pY2UpKSkpCiAgIC5mbGF0TWFwKHI9PnIuaXRlbXN8fFtdKS5maWx0ZXIoej0+bWF0Y2hlcyh6LGxpbmUpKS5yZWR1Y2UoKHN1bSx6KT0+c3VtKyhOdW1iZXIoei5xdHkpfHwwKSwwKTsKICBjb25zdCByZXNlcnZlZD1bLi4uY2FydCwuLi5yZWNvcmRlZF0uZmlsdGVyKHo9PnohPT1leGNlcHQmJnouaW52b2ljZT09PWludm9pY2UmJnouaW5kZXg9PT1pbmRleCkKICAgLnJlZHVjZSgoc3VtLHopPT5zdW0rei5xdHksMCk7CiAgY29uc3QgZWFybGllcj0oaW52b2ljZS5pdGVtc3x8W10pLnNsaWNlKDAsaW5kZXgpLmZpbHRlcih6PT5tYXRjaGVzKHosbGluZSkpCiAgIC5yZWR1Y2UoKHN1bSx6KT0+c3VtKyhOdW1iZXIoei5xdHkpfHwwKSwwKTsKICBjb25zdCBlYXJsaWVyVXNlZD1NYXRoLm1heCgwLHVzZWQtZWFybGllcikrcmVzZXJ2ZWQ7CiAgcmV0dXJuIE1hdGgubWF4KDAsTWF0aC5mbG9vcihOdW1iZXIobGluZS5xdHkpLWVhcmxpZXJVc2VkKSk7CiB9CiBmdW5jdGlvbiBhZGQoc291cmNlKXsKICBpZihyZW1haW5pbmcoc291cmNlKTw9MClyZXR1cm47CiAgY29uc3QgY3VycmVudD1jYXJ0LmZpbmQoeD0+eC5pbnZvaWNlPT09c291cmNlLmludm9pY2UmJnguaW5kZXg9PT1zb3VyY2UuaW5kZXgmJiF4LmRhbWFnZWQpOwogIGlmKGN1cnJlbnQpY3VycmVudC5xdHkrKztlbHNlIGNhcnQucHVzaCh7Li4uc291cmNlLHF0eToxLGRhbWFnZWQ6ZmFsc2V9KTsKICByZXN1bHRzLnJlcGxhY2VDaGlsZHJlbigpO3F1ZXJ5LnZhbHVlPScnO3N0YXR1cy50ZXh0Q29udGVudD0nJztyZW5kZXIoKTsKIH0KIGZ1bmN0aW9uIHNvdXJjZU9wdGlvbnMoc291cmNlKXsKICByZXR1cm4gaW52b2ljZUxpbmVzKCkuZmlsdGVyKHo9Pm1hdGNoZXMoei5saW5lLHNvdXJjZS5saW5lKSYmcmVtYWluaW5nKHosc291cmNlKT4wKTsKIH0KIGZvcm0ub25zdWJtaXQ9ZXZlbnQ9PnsKICBldmVudC5wcmV2ZW50RGVmYXVsdCgpO3Jlc3VsdHMucmVwbGFjZUNoaWxkcmVuKCk7CiAgaWYoIXBhcnR5LnZhbHVlKXtzdGF0dXMudGV4dENvbnRlbnQ9J9in2K7YqtixINin2YTYt9ix2YEg2KPZiNmE2YvYpy4nO3JldHVybjt9CiAgY29uc3QgdGVybT1ub3JtYWwocXVlcnkudmFsdWUpOwogIGlmKCF0ZXJtKXtzdGF0dXMudGV4dENvbnRlbnQ9J9ij2K/YrtmEINin2LPZhSDYp9mE2LXZhtmBINij2Ygg2KfZhNio2KfYsdmD2YjYry4nO3JldHVybjt9CiAgY29uc3QgZm91bmQ9W107CiAgZm9yKGNvbnN0IHNvdXJjZSBvZiBpbnZvaWNlTGluZXMoKSl7CiAgIGNvbnN0IHtsaW5lfT1zb3VyY2U7CiAgIGlmKChub3JtYWwobGluZS5iYXJjb2RlKT09PXRlcm18fG5vcm1hbChsaW5lLm5hbWU/P2xpbmUucHJvZHVjdCkuaW5jbHVkZXModGVybSkpJiYKICAgIHJlbWFpbmluZyhzb3VyY2UpPjAmJiFmb3VuZC5zb21lKHo9Pm1hdGNoZXMoei5saW5lLGxpbmUpKSlmb3VuZC5wdXNoKHNvdXJjZSk7CiAgfQogIGlmKGZvdW5kLmxlbmd0aD09PTEpe2FkZChmb3VuZFswXSk7cmV0dXJuO30KICBzdGF0dXMudGV4dENvbnRlbnQ9Zm91bmQubGVuZ3RoPyfYp9iu2KrYsSDYp9mE2LXZhtmBLic6J9mE2Kcg2KrZiNis2K8g2YPZhdmK2Kkg2YXYpNmH2YTYqSDZhdi32KfYqNmC2Kkg2YTZh9iw2Kcg2KfZhNi32LHZgS4nOwogIGZvcihjb25zdCBzb3VyY2Ugb2YgZm91bmQuc2xpY2UoMCwzMCkpYnV0dG9uKHJlc3VsdHMsKHNvdXJjZS5saW5lLm5hbWU/P3NvdXJjZS5saW5lLnByb2R1Y3Q/PycnKSsnIMK3ICcrKHNvdXJjZS5saW5lLmJhcmNvZGU/PycnKSwoKT0+YWRkKHNvdXJjZSkpOwogfTsKIHBhcnR5Lm9uY2hhbmdlPSgpPT57Y2FydD1bXTtzZXR0aW5ncy5jbGVhcigpO3Jlc3VsdHMucmVwbGFjZUNoaWxkcmVuKCk7c3RhdHVzLnRleHRDb250ZW50PScnO3JlbmRlcigpO307CiBmdW5jdGlvbiByZW5kZXIoKXsKICBiYXNrZXQucmVwbGFjZUNoaWxkcmVuKCk7cHJldmlldy5yZXBsYWNlQ2hpbGRyZW4oKTsKICBmb3IoY29uc3QgaXRlbSBvZiBjYXJ0KXsKICAgY29uc3QgY2FyZD1ub2RlKGJhc2tldCwnYXJ0aWNsZScpOwogICBub2RlKGNhcmQsJ3N0cm9uZycsaXRlbS5saW5lLm5hbWU/P2l0ZW0ubGluZS5wcm9kdWN0Pz9pdGVtLmxpbmUuYmFyY29kZSk7CiAgIGNvbnN0IHNlbGVjdD1ub2RlKG5vZGUoY2FyZCwnbGFiZWwnLCfYp9mE2YHYp9iq2YjYsdipINin2YTYo9i12YTZitipJyksJ3NlbGVjdCcpOwogICBjb25zdCBzb3VyY2VzPXNvdXJjZU9wdGlvbnMoaXRlbSk7CiAgIGZvcihjb25zdCBbaSxzb3VyY2VdIG9mIHNvdXJjZXMuZW50cmllcygpKXsKICAgIGNvbnN0IGRhdGU9c291cmNlLmludm9pY2UuZGF0ZT9uZXcgRGF0ZShzb3VyY2UuaW52b2ljZS5kYXRlKS50b0xvY2FsZURhdGVTdHJpbmcoJ2FyLUxCJyk6Jyc7CiAgICBvcHRpb24oc2VsZWN0LGksW25vKHNvdXJjZS5pbnZvaWNlKSxkYXRlLG1vbmV5KGNlbnRzKHNvdXJjZS5wcmljZSkpXS5qb2luKCcgwrcgJykpOwogICAgaWYoc291cmNlLmludm9pY2U9PT1pdGVtLmludm9pY2UmJnNvdXJjZS5pbmRleD09PWl0ZW0uaW5kZXgpc2VsZWN0LnZhbHVlPWk7CiAgIH0KICAgc2VsZWN0Lm9uY2hhbmdlPSgpPT57Y29uc3QgbmV4dD1zb3VyY2VzW051bWJlcihzZWxlY3QudmFsdWUpXTtPYmplY3QuYXNzaWduKGl0ZW0sbmV4dCx7cXR5Ok1hdGgubWluKGl0ZW0ucXR5LHJlbWFpbmluZyhuZXh0LGl0ZW0pKX0pO3JlbmRlcigpO307CiAgIHJvdyhjYXJkLCfYp9mE2YXYqtin2K0g2YTZhNil2LHYrNin2LknLHJlbWFpbmluZyhpdGVtLGl0ZW0pKTtyb3coY2FyZCwn2YLZitmF2Kkg2KfZhNiz2LfYsScsbW9uZXkoY2VudHMoaXRlbS5xdHkqaXRlbS5wcmljZSkpKTsKICAgY29uc3QgY29udHJvbHM9bm9kZShjYXJkLCdkaXYnKTtjb250cm9scy5jbGFzc05hbWU9J3IzNjQtcXR5JzsKICAgYnV0dG9uKGNvbnRyb2xzLCfiiJInLCgpPT57aXRlbS5xdHktLTtyZW5kZXIoKTt9KS5kaXNhYmxlZD1pdGVtLnF0eTw9MTsKICAgbm9kZShjb250cm9scywnYicsaXRlbS5xdHkpOwogICBidXR0b24oY29udHJvbHMsJysnLCgpPT57aXRlbS5xdHkrKztyZW5kZXIoKTt9KS5kaXNhYmxlZD1pdGVtLnF0eT49cmVtYWluaW5nKGl0ZW0saXRlbSk7CiAgIGJ1dHRvbihjb250cm9scywn2KXYstin2YTYqScsKCk9PntjYXJ0PWNhcnQuZmlsdGVyKHo9PnohPT1pdGVtKTtyZW5kZXIoKTt9KTsKICAgaWYoc2FsZSl7CiAgICBjb25zdCBsYWJlbD1ub2RlKGNhcmQsJ2xhYmVsJywn2KrYp9mE2YEgICcpLGNoZWNrPW5vZGUobGFiZWwsJ2lucHV0Jyk7Y2hlY2sudHlwZT0nY2hlY2tib3gnO2NoZWNrLmNoZWNrZWQ9aXRlbS5kYW1hZ2VkOwogICAgY2hlY2sub25jaGFuZ2U9KCk9PntpdGVtLmRhbWFnZWQ9Y2hlY2suY2hlY2tlZDtyZW5kZXIoKTt9OwogICB9CiAgfQogIGlmKCFjYXJ0Lmxlbmd0aClyZXR1cm47CiAgY29uc3QgdG90YWxzPW5ldyBNYXAoKTsKICBmb3IoY29uc3QgaXRlbSBvZiBjYXJ0KXRvdGFscy5zZXQoaXRlbS5pbnZvaWNlLCh0b3RhbHMuZ2V0KGl0ZW0uaW52b2ljZSl8fDApK2NlbnRzKGl0ZW0ucXR5Kml0ZW0ucHJpY2UpKTsKICBub2RlKHByZXZpZXcsJ2gzJywn2YXYudin2YrZhtipINin2YTYqtiz2YjZitipJyk7CiAgcm93KHByZXZpZXcsJ9il2KzZhdin2YTZiiDYp9mE2YXYsdiq2KzYuScsbW9uZXkoWy4uLnRvdGFscy52YWx1ZXMoKV0ucmVkdWNlKChhLGIpPT5hK2IsMCkpKTsKICBsZXQgdmFsaWQ9dHJ1ZTsKICBjb25zdCBwbGFubmVkPVtdOwogIGZvcihjb25zdCBbaW52b2ljZSx0b3RhbF0gb2YgdG90YWxzKXsKICAgY29uc3Qgb3JpZ2luYWxEZWJ0PU51bWJlcih3aW5kb3cucG9zMjY1SW52b2ljZURlYnRVU0Q/LihpbnZvaWNlKT8/aW52b2ljZS5kZWJ0KTsKICAgaWYoIU51bWJlci5pc0Zpbml0ZShvcmlnaW5hbERlYnQpKXt2YWxpZD1mYWxzZTtjb250aW51ZTt9CiAgIGNvbnN0IHNpbXVsYXRlZERlYnQ9cmVjb3JkZWQuZmlsdGVyKHg9PnguaW52b2ljZT09PWludm9pY2UpLnJlZHVjZSgoc3VtLHgpPT5zdW0rKHguZGVidEFwcGxpZWR8fDApLDApOwogICBjb25zdCBkZWJ0PU1hdGgubWF4KDAsY2VudHMob3JpZ2luYWxEZWJ0KS1zaW11bGF0ZWREZWJ0KSxjdXQ9TWF0aC5taW4oZGVidCx0b3RhbCksZXh0cmE9dG90YWwtY3V0OwogICBjb25zdCBjYXJkPW5vZGUocHJldmlldywnYXJ0aWNsZScpOwogICBub2RlKGNhcmQsJ2InLG5vKGludm9pY2UpKTtyb3coY2FyZCwn2KrYrtmB2YrYtiDYp9mE2K/ZitmGJyxtb25leShjdXQpKTtyb3coY2FyZCwn2KfZhNiv2YrZhiDYp9mE2YXYqtio2YLZiicsbW9uZXkoZGVidC1jdXQpKTsKICAgaWYoZXh0cmEpewogICAgY29uc3Qgc2VsZWN0PW5vZGUobm9kZShjYXJkLCdsYWJlbCcsJ9iq2LPZiNmK2Kkg2KfZhNmF2KrYqNmC2YonKSwnc2VsZWN0Jyk7CiAgICBvcHRpb24oc2VsZWN0LCdjcmVkaXQnLHNhbGU/J9ix2LXZitivINmE2LXYp9mE2K0g2KfZhNi52YXZitmEJzon2YXYqNmE2Log2YXYs9iq2K3ZgiDZhNmG2Kcg2YTYr9mJINin2YTZhdmI2LHYrycpOwogICAgb3B0aW9uKHNlbGVjdCwnY2FzaCcsc2FsZT8n2LHYryDYp9mE2YbZgtivINmB2LnZhNmK2YvYpyc6J9mC2KjYtiDYp9mE2YbZgtivINmB2LnZhNmK2YvYpycpOwogICAgc2VsZWN0LnZhbHVlPXNldHRpbmdzLmdldChpbnZvaWNlKXx8J2NyZWRpdCc7CiAgICBzZWxlY3Qub25jaGFuZ2U9KCk9PntzZXR0aW5ncy5zZXQoaW52b2ljZSxzZWxlY3QudmFsdWUpO3JlbmRlcigpO307CiAgIH0KICAgY29uc3QgY2FzaD1zZXR0aW5ncy5nZXQoaW52b2ljZSk9PT0nY2FzaCc/ZXh0cmE6MDsKICAgcGxhbm5lZC5wdXNoKHtpbnZvaWNlLGN1dCx0b3RhbCxjYXNoLGNyZWRpdDpleHRyYS1jYXNofSk7CiAgIHJvdyhjYXJkLCfYrdix2YPYqSDYp9mE2LXZhtiv2YjZgiDYqNin2YTYr9mI2YTYp9ixJywoY2FzaD8oc2FsZT8n4oiSJzonKycpOicnKSttb25leShjYXNoKSk7CiAgIHJvdyhjYXJkLHNhbGU/J9in2YTYsdi12YrYryDZhNi12KfZhNitINin2YTYudmF2YrZhCc6J9in2YTZhdiz2KrYrdmCINmE2YbYpyDZhNiv2Ykg2KfZhNmF2YjYsdivJyxtb25leShleHRyYS1jYXNoKSk7CiAgfQogIHJvdyhwcmV2aWV3LCfYqti62YrYsSDYp9mE2YXYrtiy2YjZhiDYp9mE2YXYqtin2K0nLFN0cmluZyhjYXJ0LnJlZHVjZSgoc3VtLHopPT5zdW0rKHNhbGU/KHouZGFtYWdlZD8wOnoucXR5KTotei5xdHkpLDApKSk7CiAgaWYoIXZhbGlkKW5vZGUocHJldmlldywncCcsJ9iq2LnYsNixINin2K3Yqtiz2KfYqCDYpdit2K/ZiSDYp9mE2YHZiNin2KrZitixLicpOwogIGJ1dHRvbihwcmV2aWV3LCfYp9i52KrZhdin2K8g2KrYrNix2YrYqNmKJywoKT0+ewogICBmb3IoY29uc3QgcCBvZiBwbGFubmVkKXsKICAgIGNvbnN0IHJlZj0oc2FsZT8nU1JUJzonUFJUJykrJy1URVNULScrKCsrc2VxdWVuY2UpOwogICAgcm93KGhpc3RvcnkscmVmKycgwrcgJytubyhwLmludm9pY2UpLG1vbmV5KHAudG90YWwpKTsKICAgIGlmKHAuY2FzaClyb3coaGlzdG9yeSxzYWxlPyfYs9mG2K8g2LXYsdmBINiq2KzYsdmK2KjZiic6J9iz2YbYryDZgtio2LYg2KrYrNix2YrYqNmKJyxtb25leShwLmNhc2gpKTsKICAgIGNvbnN0IGl0ZW1zPWNhcnQuZmlsdGVyKHo9PnouaW52b2ljZT09PXAuaW52b2ljZSk7aXRlbXNbMF0uZGVidEFwcGxpZWQ9cC5jdXQ7cmVjb3JkZWQucHVzaCguLi5pdGVtcyk7CiAgIH0KICAgY2FydD1bXTtzZXR0aW5ncy5jbGVhcigpO3N0YXR1cy50ZXh0Q29udGVudD0n2KrZhdiqINiq2KzYsdio2Kkg2KfZhNin2LnYqtmF2KfYry4g2YTZhSDYqtmP2LHYrdmR2YQg2K3YsdmD2Kkg2YHYudmE2YrYqS4nO3JlbmRlcigpOwogIH0pLmRpc2FibGVkPSF2YWxpZDsKIH0KIGlmKG9yaWdpbmFsKXsKICBjb25zdCBlbGlnaWJsZT1pbnZvaWNlTGluZXMoKS5maWx0ZXIoeD0+eC5pbnZvaWNlPT09b3JpZ2luYWwmJnJlbWFpbmluZyh4KT4wKTsKICBmb3IoY29uc3Qgc291cmNlIG9mIGVsaWdpYmxlKWJ1dHRvbihyZXN1bHRzLHNvdXJjZS5saW5lLm5hbWU/P3NvdXJjZS5saW5lLmJhcmNvZGUsKCk9PmFkZChzb3VyY2UpKTsKIH0KIGRpYWxvZy5zaG93TW9kYWwoKTsKfTsKfSkoKTsKPC9zY3JpcHQ+Cg==').decode('utf-8')
+          p.write_text(h)
+          Path('/tmp/r364-html.sha').write_text(hashlib.sha256(p.read_bytes()).hexdigest())
+          PY
+      - name: Apply and verify live invoice returns
+        run: |
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          p=Path('r305-android/tab2/POS7_Tablet/app/src/main/assets/index.html')
+          change=json.loads(Path('pos7-release-audit/r365/edits.json').read_text())
+          assert hashlib.sha256(p.read_bytes()).hexdigest()==change['before']
+          lines=p.read_text().splitlines(keepends=True)
+          for i,j,value in reversed(change['edits']):
+              lines[i:j]=[value]
+          p.write_text(''.join(lines))
+          assert hashlib.sha256(p.read_bytes()).hexdigest()==change['after']
+          Path('/tmp/r364-html.sha').write_text(change['after'])
+          PY
+          node pos7-release-audit/r365/test.cjs r305-android/tab2/POS7_Tablet/app/src/main/assets/index.html
+      - name: Set upgrade versionCode
+        env:
+          INSTALLED_CODE: ${{ inputs.installed_version_code }}
+        run: |
+          python3 - <<'PY2'
+          import os
+          raw=os.getenv('INSTALLED_CODE','').strip()
+          if raw and (not raw.isascii() or not raw.isdecimal()):raise SystemExit('Invalid installed code')
+          code=max(2001047000+int(os.environ['GITHUB_RUN_NUMBER']),int(raw)+1 if raw else 0)
+          if code>2100000000:raise SystemExit('versionCode exceeds Android limit')
+          with open(os.environ['GITHUB_ENV'],'a') as f:f.write(f'POS7_VERSION_CODE={code}\n')
+          print('New tablet versionCode:',code)
+          PY2
+      - name: Verify original tablet release signing certificate
+        env:
+          POS7_KEYSTORE_BASE64: ${{ secrets.POS7_KEYSTORE_BASE64 }}
+          POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
+          POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
+          POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for k in POS7_KEYSTORE_BASE64 POS7_KEYSTORE_PASSWORD POS7_KEY_ALIAS POS7_KEY_PASSWORD; do test -n "${!k:-}" || { echo "Missing secret $k"; exit 1; }; done
+          umask 077
+          printf '%s' "$POS7_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/pos7-tablet-release.jks"
+          actual=$(keytool -exportcert -keystore "$RUNNER_TEMP/pos7-tablet-release.jks" -storepass:env POS7_KEYSTORE_PASSWORD -alias "$POS7_KEY_ALIAS" | sha256sum | awk '{print $1}')
+          expected='843ed618b18ec7a0cbb50f38984374540da016c41a8df8042bb8db19964d4495'
+          test "$actual" = "$expected" || { echo 'Original tablet signing certificate mismatch'; exit 1; }
+          echo "POS7_KEYSTORE_PATH=$RUNNER_TEMP/pos7-tablet-release.jks" >> "$GITHUB_ENV"
+          echo "POS7_SIGNING_CERT_SHA256=$actual" >> "$GITHUB_ENV"
+      - name: Build signed tablet APK
+        working-directory: r305-android/${{ matrix.branch }}/POS7_Tablet
+        env:
+          POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
+          POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
+          POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
+        run: |
+          if ! gradle --no-daemon clean assembleRelease > "$RUNNER_TEMP/tab2-gradle.log" 2>&1; then
+            cat "$RUNNER_TEMP/tab2-gradle.log"
+            grep -q 'status code 429' "$RUNNER_TEMP/tab2-gradle.log" || exit 1
+            python3 - <<'PY'
+          from pathlib import Path
+          p=Path('settings.gradle')
+          s=p.read_text()
+          assert 'mavenCentral()' in s
+          p.write_text(s.replace('mavenCentral()', "maven { url 'https://maven-central.storage-download.googleapis.com/maven2' }"))
+          PY
+            gradle --no-daemon clean assembleRelease
+          else
+            cat "$RUNNER_TEMP/tab2-gradle.log"
+          fi
+      - name: Verify final APK and package
+        run: |
+          set -euo pipefail
+          apk=r305-android/${{ matrix.branch }}/POS7_Tablet/app/build/outputs/apk/release/app-release.apk
+          sdk="$ANDROID_HOME/build-tools/35.0.0"
+          "$sdk/apksigner" verify --verbose "$apk"
+          python3 - <<'PY'
+          import zipfile
+          apk='r305-android/tab2/POS7_Tablet/app/build/outputs/apk/release/app-release.apk'
+          with zipfile.ZipFile(apk) as z:
+              source=z.read('assets/index.html').decode('utf-8')
+          assert source.count('المتجر الثاني — قاعدة مستقلة • 485.7.229-r365-tab2')==1
+          assert 'المتجر الثاني — قاعدة مستقلة • R215' not in source
+          assert 'POS7_RESTORE_PENDING_R305' in source
+          assert '<script src="local_restore_r323.js"></script>' in source
+          with zipfile.ZipFile(apk) as z:
+              localonly=z.read('assets/local_restore_r323.js').decode('utf8')
+              transfer=z.read('assets/restore_transfer.js').decode('utf8')
+          assert "localStorage.setItem(LOCAL,'yes')" in localonly
+          assert 'removeItem(RESTORE)' not in localonly
+          assert 'pos7_owner_publish' not in localonly
+          with zipfile.ZipFile(apk) as z:
+              same_device=z.read('assets/same_device_r324.js').decode('utf8')
+          assert '<script src="same_device_r324.js"></script>' in source
+          assert 'pos7_restore_same_device_r324' in same_device
+          assert 'pos7_restore_same_device_status_r324' in same_device
+          assert 'pos7_restore_same_device_r324' in transfer
+          assert 'pos7_restore_same_device_status_r324' in transfer
+          assert "localStorage.getItem(markerKey) &&" in transfer
+          assert "![" in transfer and "].includes(name)" in transfer
+          assert 'window.pos307HomeBatchInstalled=true' in source
+          assert 'pos7_inventory_mark_review_r346' in source
+          assert 'POS7_R348_SYNC_RESERVED' in source and 'waitPublisherIdle' in source
+          assert 'R345_wait_for_sync' not in source
+          assert 'POS7R361Txn' in source and 'pos7R354ShowCurrentAudit' in source and 'pos7_inventory_prepare_tab2_r362' in source
+          import hashlib
+          assert source.count('id="pos7-r365-return-cards"')==1
+          assert 'SRT-TEST' not in source and 'اعتماد تجريبي داخل هذه الجلسة' not in source
+          assert 'pos7_inventory_repair_revisions_tab2_r345' in source
+          assert 'jdcolkgzwqpwbfvcrdje' not in source
+          assert 'https://rmskuolsiqbzxuakofpb.supabase.co' in source
+          import hashlib
+          from pathlib import Path
+          assert hashlib.sha256(source.encode()).hexdigest()==Path('/tmp/r364-html.sha').read_text()
+          print('Signed APK contains exact final Tab2 source and preserved restore modules')
+          PY
+          "$sdk/aapt" dump badging "$apk" | grep -F "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.229-r365-${{ matrix.branch }}'"
+          actual=$("$sdk/apksigner" verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2}' | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')
+          test "$actual" = "$POS7_SIGNING_CERT_SHA256"
+          mkdir -p output
+          cp "$apk" output/POS7_Tablet_R365_${{ matrix.branch }}.apk
+          sha256sum output/*.apk > output/SHA256SUMS.txt
+          printf 'versionName=485.7.229-r365-${{ matrix.branch }}\nversionCode=%s\n' "$POS7_VERSION_CODE" > output/build-info.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: POS7-Tablet-R365-${{ matrix.branch }}-${{ env.POS7_VERSION_CODE }}
+          path: output/
+          if-no-files-found: error
+      - name: Delete temporary signing material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/pos7-tablet-release.jks"
