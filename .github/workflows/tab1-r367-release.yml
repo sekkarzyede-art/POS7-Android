@@ -200,7 +200,7 @@ jobs:
           import os
           raw=os.getenv('INSTALLED_CODE','').strip()
           if raw and (not raw.isascii() or not raw.isdecimal()):raise SystemExit('Invalid installed code')
-          code=max(2001040101,2001040100+int(os.environ['GITHUB_RUN_NUMBER']),int(raw)+1 if raw else 0)
+          code=max(2001049001,2001049000+int(os.environ['GITHUB_RUN_NUMBER']),int(raw)+1 if raw else 0)
           if code>2100000000:raise SystemExit('versionCode exceeds Android limit')
           with open(os.environ['GITHUB_ENV'],'a') as f:f.write(f'POS7_VERSION_CODE={code}\n')
           print('New tablet versionCode:',code)
