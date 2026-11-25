@@ -1,0 +1,369 @@
+
+name: Build signed Tab2 R364 returns preview
+on:
+  push:
+    branches: [fix/tab2-r364-return-cards]
+    paths: ['.github/workflows/r364-tab2-release.yml']
+  workflow_dispatch:
+    inputs:
+      installed_version_code:
+        description: 'Optional actual installed Tab2 versionCode'
+        required: false
+        default: ''
+        type: string
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      matrix:
+        branch: [tab2]
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - uses: android-actions/setup-android@v4
+      - run: sdkmanager --install 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Prepare restored-backup transfer sources
+        run: python3 pos7-release-audit/r305/build_sources.py
+      - name: Apply R324 safe accounting boot patch
+        run: python3 pos7-release-audit/r319/optimize_boot.py
+      - name: Apply R324 conditional cached USD balances persistence
+        run: python3 pos7-release-audit/r320/optimize_balances.py
+      - name: Apply R323 offline-only local backup approval for Tab2
+        run: python3 pos7-release-audit/r323/apply_local_only.py
+      - name: Add R324 same-device-only cloud reconciliation gated by R305
+        run: python3 pos7-release-audit/r324/apply_same_device.py
+      - name: Reconstruct previously verified integrated Tab2 source
+        run: |
+          app=r305-android/tab2/POS7_Tablet/app
+          python3 pos7-release-audit/r345/apply_storage_html.py "$app/src/main/assets/index.html"
+          python3 pos7-release-audit/r345/apply_native.py
+          python3 pos7-release-audit/r345-inventory/apply_inventory.py "$app/src/main/assets/index.html"
+          sha256sum "$app/src/main/assets/"{restore_transfer.js,local_restore_r323.js,same_device_r324.js} > /tmp/tab2-restore-sha
+      - name: Apply exact receipt edits and native image share
+        run: |
+          app=r305-android/tab2/POS7_Tablet/app
+          python3 pos7-release-audit/r345-print/apply_print.py "$app/src/main/assets/index.html"
+          python3 pos7-release-audit/r345-print/apply_native_share.py "$app/src/main"
+          sha256sum -c /tmp/tab2-restore-sha
+          node pos7-release-audit/r345-print/print_tests.cjs "$app/src/main/assets/index.html"
+          node pos7-release-audit/r345/storage_tests.cjs "$app/src/main/assets/index.html"
+      - name: Apply exact R346 review outcome and test final integrated source
+        run: |
+          app=r305-android/tab2/POS7_Tablet/app
+          python3 pos7-release-audit/r346/apply_review.py "$app/src/main/assets/index.html"
+          sha256sum -c /tmp/tab2-restore-sha
+          node pos7-release-audit/r345-print/print_tests.cjs "$app/src/main/assets/index.html"
+          node pos7-release-audit/r345/storage_tests.cjs "$app/src/main/assets/index.html"
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          p=Path('r305-android/tab2/POS7_Tablet/app/src/main/assets/index.html')
+          assert hashlib.sha256(p.read_bytes()).hexdigest()=='0307d17448900cdc5c276296a8263d05690209f2d8e913196b2d49555bebd2e8'
+          h=p.read_text()
+          for marker in ['pos7_inventory_mark_review_r346','R346_review_ack_unverified','verifiedReview(found[0],id)','const MAX_BATCH=30;','pos7_inventory_commit_batch_r254','POS7_R345_REPAIR_JOURNAL_V1','POS7_R344_productHeld','POS7_RESTORE_PENDING_R305','pos7_inventory_repair_revisions_tab2_r345','pos7_inventory_prepare_tab2_r345','cloudStatus:\'rejected\'']:
+              assert marker in h,marker
+          assert 'R213: اعتماد دفعة الجرد جارٍ؛ لا تغيّر المخزون حتى انتهاء الدفعة' not in h
+          print('Exact tested R346 candidate and inventory guards verified')
+          PY
+      - name: Apply R348 inventory wait coordination and validate actual button handler
+        run: |
+          app=r305-android/tab2/POS7_Tablet/app
+          python3 pos7-release-audit/r348/apply_wait.py "$app/src/main/assets/index.html"
+          sha256sum -c /tmp/tab2-restore-sha
+          node pos7-release-audit/r348/wait_tests.cjs "$app/src/main/assets/index.html"
+          node pos7-release-audit/r348/inventory_tests.cjs "$app/src/main/assets/index.html"
+          node pos7-release-audit/r345-print/print_tests.cjs "$app/src/main/assets/index.html"
+          node pos7-release-audit/r345/storage_tests.cjs "$app/src/main/assets/index.html"
+      - name: Reconstruct exact locally tested R361 candidate
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json
+          p=Path('r305-android/tab2/POS7_Tablet/app/src/main/assets/index.html')
+          raw=p.read_bytes()
+          assert hashlib.sha256(raw).hexdigest()=='70c111b23ff28c8dc8fc4873e453b92ffcbbc34e3c307cf697356d8701ea0b79'
+          lines=raw.decode('utf-8').splitlines(keepends=True)
+          edits=[]
+          for n,sha in [(1,'d79a6acb5c18192c2ccc7210d7c15b774bf2117a98a6dbb2a5f8a20db7325fdf'),(2,'3fd965011402eba2c9f6fdd3d822fc702facb22d6f88cc0c630ae3d3e6fa4d3c')]:
+              b=Path(f'pos7-release-audit/r361/edits{n}.json').read_bytes()
+              assert hashlib.sha256(b).hexdigest()==sha
+              edits.extend(json.loads(b))
+          assert len(edits)==82
+          for i,j,s in reversed(edits):
+              lines[i:j]=[s]
+          data=''.join(lines).encode('utf-8')
+          assert hashlib.sha256(data).hexdigest()=='7dd730e608fcb1ce6570511c5698c138f675d93b7855b10b79015f373e5b50cc'
+          p.write_bytes(data)
+          print('Exact R361 candidate SHA256 verified')
+          PY
+          sha256sum -c /tmp/tab2-restore-sha
+      - name: Apply R362 confirmed missing revision recovery and run tests
+        run: |
+          app=r305-android/tab2/POS7_Tablet/app
+          python3 pos7-release-audit/r362/patch_tablet.py "$app/src/main/assets/index.html"
+          sha256sum -c /tmp/tab2-restore-sha
+          node pos7-release-audit/r362/test_tablet_r362.cjs "$app/src/main/assets/index.html"
+          node pos7-release-audit/r348/inventory_tests.cjs "$app/src/main/assets/index.html"
+      - name: Verify all scripts and private image provider
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from html.parser import HTMLParser
+          import hashlib,subprocess,xml.etree.ElementTree as ET
+          app=Path('r305-android/tab2/POS7_Tablet/app/src/main')
+          f=app/'assets/index.html'
+          assert hashlib.sha256(f.read_bytes()).hexdigest()=='debd6fde52290e901986abef91da68ef296d2ded731fa28d6a4f9f6568ac9f2b'
+          h=f.read_text()
+          assert 'jdcolkgzwqpwbfvcrdje' not in h and 'https://rmskuolsiqbzxuakofpb.supabase.co' in h
+          assert 'عليكم مبلغ' not in h
+          assert h.count('id="saleDeliveryTile"')==1
+          class P(HTMLParser):
+              def __init__(self):super().__init__();self.active=False;self.s=[]
+              def handle_starttag(self,t,a):
+                  if t=='script':self.active=True;self.s.append('')
+              def handle_endtag(self,t):
+                  if t=='script':self.active=False
+              def handle_data(self,d):
+                  if self.active:self.s[-1]+=d
+          p=P();p.feed(h)
+          for i,s in enumerate(p.s):
+              if s.strip():
+                  r=subprocess.run(['node','--check'],input=s,text=True,capture_output=True)
+                  if r.returncode:raise SystemExit(f'Script {i}: {r.stderr}')
+          ns='{http://schemas.android.com/apk/res/android}'
+          providers=[x for x in ET.parse(app/'AndroidManifest.xml').iter('provider') if x.get(ns+'name')=='.SaleReceiptProvider']
+          assert len(providers)==1 and providers[0].get(ns+'exported')=='false' and providers[0].get(ns+'grantUriPermissions')=='true'
+          paths=list(ET.parse(app/'res/xml/sale_image_paths.xml').getroot())
+          assert len(paths)==1 and paths[0].tag=='cache-path' and paths[0].get('path')=='sale-receipts/'
+          print('Verified source and private provider; inline scripts:',len(p.s))
+          PY
+      - name: Set R364 release identity without changing business logic
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          app=Path('r305-android/tab2/POS7_Tablet/app')
+          h=app/'src/main/assets/index.html'; g=app/'build.gradle'
+          b=h.read_bytes(); old='485.7.229-r345-tab2'.encode(); new='485.7.229-r364-tab2'.encode()
+          assert b.count(old)>=1 and new not in b
+          h.write_bytes(b.replace(old,new))
+          raw=g.read_text(); assert raw.count("versionName '485.7.229-r345-tab2'")==1
+          g.write_text(raw.replace("versionName '485.7.229-r345-tab2'","versionName '485.7.229-r364-tab2'"))
+          assert hashlib.sha256(h.read_bytes().replace(new,old)).hexdigest()=='debd6fde52290e901986abef91da68ef296d2ded731fa28d6a4f9f6568ac9f2b'
+          Path('/tmp/r362-release-html.sha').write_text(hashlib.sha256(h.read_bytes()).hexdigest())
+          PY
+      - name: Install integrated returns preview on verified R362 base
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          p=Path('r305-android/tab2/POS7_Tablet/app/src/main/assets/index.html')
+          h=p.read_text()
+          for old,new in [("  <div class=\"home-tile\" onclick=\"openPage('suppliers')\">","  <button type=\"button\" class=\"home-tile\" onclick=\"pos7R364OpenReturns(true)\"><span class=\"home-icon\">↩</span><span>مرتجع مبيعات</span></button>\n  <button type=\"button\" class=\"home-tile\" onclick=\"pos7R364OpenReturns(false)\"><span class=\"home-icon\">↩</span><span>مرتجع مشتريات</span></button>\n  <div class=\"home-tile\" onclick=\"openPage('suppliers')\">"),(" let act=cancelled(x)?view:(view+edit+ret+cancel);"," let testReturn='<button class=\"soft\" onclick=\"pos7R364OpenReturns('+(sale?'true':'false')+','+JSON.stringify(x.id)+')\">معاينة المرتجع</button>';\n let act=cancelled(x)?view:(view+edit+ret+testReturn+cancel);")]:
+              assert h.count(old)==1,old
+              h=h.replace(old,new)
+          h=h+'\n'+"<style>\n#r364Dialog{width:min(760px,94vw);max-height:88vh;border:1px solid #bfcee0;border-radius:16px;color:#142a47;padding:18px;overflow:auto}\n#r364Dialog::backdrop{background:#0f2139aa}\n#r364Dialog header,#r364Dialog .r364-row{display:flex;align-items:center;justify-content:space-between;gap:12px}\n#r364Dialog label{display:block;margin:10px 0}\n#r364Dialog input:not([type=checkbox]),#r364Dialog select{width:100%;min-height:44px}\n#r364Dialog article{border:1px solid #d5e0ec;border-radius:12px;padding:12px;margin:10px 0}\n#r364Dialog .r364-row{padding:6px 0;border-bottom:1px solid #e3ebf3}\n#r364Dialog .r364-qty{display:flex;align-items:center;gap:10px;margin:8px 0}\n#r364Dialog .r364-qty button{min-width:44px;min-height:44px}\n</style>\n<script id=\"pos7-r364-return-cards\">\n(() => {\n'use strict';\nconst active=x=>x&&!x.cancelled&&!x.canceled&&!x.voided&&!x.reversed&&!/^(cancelled|canceled|voided)$/i.test(x.status||'');\nconst same=(a,b)=>a!=null&&b!=null&&String(a)===String(b);\nconst normal=v=>String(v??'').trim().toLowerCase().replace(/[٠-٩۰-۹]/g,c=>String(c.charCodeAt(0)-(c<='٩'?0x660:0x6f0)));\nconst key=x=>x.productId??x.id;\nconst matches=(a,b)=>key(a)!=null&&key(b)!=null?same(key(a),key(b)):Boolean(normal(a.barcode))&&normal(a.barcode)===normal(b.barcode);\nconst no=x=>x.number||x.no||x.recordNo||x.ref||x.id;\nconst money=c=>'
+        env:
+          INSTALLED_CODE: ${{ inputs.installed_version_code }}
+        run: |
+          python3 - <<'PY2'
+          import os
+          raw=os.getenv('INSTALLED_CODE','').strip()
+          if raw and (not raw.isascii() or not raw.isdecimal()):raise SystemExit('Invalid installed code')
+          code=max(2001046000+int(os.environ['GITHUB_RUN_NUMBER']),int(raw)+1 if raw else 0)
+          if code>2100000000:raise SystemExit('versionCode exceeds Android limit')
+          with open(os.environ['GITHUB_ENV'],'a') as f:f.write(f'POS7_VERSION_CODE={code}\n')
+          print('New tablet versionCode:',code)
+          PY2
+      - name: Verify original tablet release signing certificate
+        env:
+          POS7_KEYSTORE_BASE64: ${{ secrets.POS7_KEYSTORE_BASE64 }}
+          POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
+          POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
+          POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for k in POS7_KEYSTORE_BASE64 POS7_KEYSTORE_PASSWORD POS7_KEY_ALIAS POS7_KEY_PASSWORD; do test -n "${!k:-}" || { echo "Missing secret $k"; exit 1; }; done
+          umask 077
+          printf '%s' "$POS7_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/pos7-tablet-release.jks"
+          actual=$(keytool -exportcert -keystore "$RUNNER_TEMP/pos7-tablet-release.jks" -storepass:env POS7_KEYSTORE_PASSWORD -alias "$POS7_KEY_ALIAS" | sha256sum | awk '{print $1}')
+          expected='843ed618b18ec7a0cbb50f38984374540da016c41a8df8042bb8db19964d4495'
+          test "$actual" = "$expected" || { echo 'Original tablet signing certificate mismatch'; exit 1; }
+          echo "POS7_KEYSTORE_PATH=$RUNNER_TEMP/pos7-tablet-release.jks" >> "$GITHUB_ENV"
+          echo "POS7_SIGNING_CERT_SHA256=$actual" >> "$GITHUB_ENV"
+      - name: Build signed tablet APK
+        working-directory: r305-android/${{ matrix.branch }}/POS7_Tablet
+        env:
+          POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
+          POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
+          POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
+        run: gradle --no-daemon clean assembleRelease
+      - name: Verify final APK and package
+        run: |
+          set -euo pipefail
+          apk=r305-android/${{ matrix.branch }}/POS7_Tablet/app/build/outputs/apk/release/app-release.apk
+          sdk="$ANDROID_HOME/build-tools/35.0.0"
+          "$sdk/apksigner" verify --verbose "$apk"
+          python3 - <<'PY'
+          import zipfile
+          apk='r305-android/tab2/POS7_Tablet/app/build/outputs/apk/release/app-release.apk'
+          with zipfile.ZipFile(apk) as z:
+              source=z.read('assets/index.html').decode('utf-8')
+          assert source.count('المتجر الثاني — قاعدة مستقلة • 485.7.229-r364-tab2')==1
+          assert 'المتجر الثاني — قاعدة مستقلة • R215' not in source
+          assert 'POS7_RESTORE_PENDING_R305' in source
+          assert '<script src="local_restore_r323.js"></script>' in source
+          with zipfile.ZipFile(apk) as z:
+              localonly=z.read('assets/local_restore_r323.js').decode('utf8')
+              transfer=z.read('assets/restore_transfer.js').decode('utf8')
+          assert "localStorage.setItem(LOCAL,'yes')" in localonly
+          assert 'removeItem(RESTORE)' not in localonly
+          assert 'pos7_owner_publish' not in localonly
+          with zipfile.ZipFile(apk) as z:
+              same_device=z.read('assets/same_device_r324.js').decode('utf8')
+          assert '<script src="same_device_r324.js"></script>' in source
+          assert 'pos7_restore_same_device_r324' in same_device
+          assert 'pos7_restore_same_device_status_r324' in same_device
+          assert 'pos7_restore_same_device_r324' in transfer
+          assert 'pos7_restore_same_device_status_r324' in transfer
+          assert "localStorage.getItem(markerKey) &&" in transfer
+          assert "![" in transfer and "].includes(name)" in transfer
+          assert 'window.pos307HomeBatchInstalled=true' in source
+          assert 'pos7_inventory_mark_review_r346' in source
+          assert 'POS7_R348_SYNC_RESERVED' in source and 'waitPublisherIdle' in source
+          assert 'R345_wait_for_sync' not in source
+          assert 'POS7R361Txn' in source and 'pos7R354ShowCurrentAudit' in source and 'pos7_inventory_prepare_tab2_r362' in source
+          import hashlib
+          assert source.count('id="pos7-r364-return-cards"')==1
+          assert 'pos7_inventory_repair_revisions_tab2_r345' in source
+          assert 'jdcolkgzwqpwbfvcrdje' not in source
+          assert 'https://rmskuolsiqbzxuakofpb.supabase.co' in source
+          import hashlib
+          from pathlib import Path
+          assert hashlib.sha256(source.encode()).hexdigest()==Path('/tmp/r364-html.sha').read_text()
+          print('Signed APK contains exact final Tab2 source and preserved restore modules')
+          PY
+          "$sdk/aapt" dump badging "$apk" | grep -F "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.229-r364-${{ matrix.branch }}'"
+          actual=$("$sdk/apksigner" verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2}' | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')
+          test "$actual" = "$POS7_SIGNING_CERT_SHA256"
+          mkdir -p output
+          cp "$apk" output/POS7_Tablet_R364_${{ matrix.branch }}.apk
+          sha256sum output/*.apk > output/SHA256SUMS.txt
+          printf 'versionName=485.7.229-r364-${{ matrix.branch }}\nversionCode=%s\n' "$POS7_VERSION_CODE" > output/build-info.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: POS7-Tablet-R364-${{ matrix.branch }}-${{ env.POS7_VERSION_CODE }}
+          path: output/
+          if-no-files-found: error
+      - name: Delete temporary signing material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/pos7-tablet-release.jks"
++(c/100).toFixed(2);\nconst cents=value=>Math.round(Number(value)*100);\nfunction node(parent,tag,text=''){\n const e=document.createElement(tag);e.textContent=text;parent.append(e);return e;\n}\nfunction button(parent,label,action){\n const b=node(parent,'button',label);b.type='button';b.className='soft';b.onclick=action;return b;\n}\nfunction option(select,value,label){node(select,'option',label).value=value;}\nfunction row(parent,label,value){\n const div=node(parent,'div');div.className='r364-row';node(div,'span',label);node(div,'b',value).dir='auto';\n}\nfunction sourcePrice(sale,invoice,line){\n const price=Number(sale?(line.sell??line.price):line.cost);\n if(!Number.isFinite(price)||price<0)return NaN;\n const discount=Number(invoice.discount||0);\n if(!sale||!discount)return price;\n const gross=Number(invoice.grossTotal);\n return gross>0&&discount>=0&&discount<=gross?price*(gross-discount)/gross:NaN;\n}\nwindow.pos7R364OpenReturns=function(sale,invoiceId){\n if(!window.v250Can?.(sale?'sales':'purchase'))return toast('لا توجد صلاحية لهذه البطاقة.');\n const partyKey=sale?'customer':'supplier';\n const docs=(sale?state.sales:state.purchases)||[];\n const returns=(sale?state.salesReturns:[...(state.purchaseReturns||[]),...(state.purchasesReturns||[]),...(state.supplierReturns||[])])||[];\n const original=invoiceId==null?null:docs.find(x=>active(x)&&same(x.id,invoiceId));\n if(invoiceId!=null&&!original)return toast('الفاتورة الأصلية غير متاحة.');\n document.getElementById('r364Dialog')?.remove();\n const dialog=node(document.body,'dialog');dialog.id='r364Dialog';dialog.dir='rtl';\n const heading=node(dialog,'header');\n node(heading,'h2',sale?'مرتجع مبيعات':'مرتجع مشتريات');\n button(heading,'إغلاق',()=>dialog.close());\n dialog.onclose=()=>dialog.remove();\n node(dialog,'p','معاينة تاب٢ · اعتماد تجريبي داخل هذه الجلسة');\n const party=node(node(dialog,'label',sale?'العميل':'المورد'),'select');\n option(party,'','اختر '+(sale?'العميل':'المورد'));\n for(const name of [...new Set(docs.filter(active).map(x=>x[partyKey]).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ar')))option(party,name,name);\n if(original)party.value=original[partyKey];\n const form=node(dialog,'form'),query=node(node(form,'label','اسم الصنف أو الباركود'),'input');\n query.autocomplete='off';query.placeholder='اكتب اسم الصنف أو امسح الباركود';\n node(form,'button','بحث');\n const status=node(dialog,'p');status.setAttribute('role','status');\n const results=node(dialog,'div'),basket=node(dialog,'div'),preview=node(dialog,'div'),history=node(dialog,'div');\n let cart=[],recorded=[],settings=new Map(),sequence=0;\n\n function invoiceLines(){\n  return docs.filter(x=>active(x)&&x[partyKey]===party.value)\n   .sort((a,b)=>Date.parse(b.date)-Date.parse(a.date))\n   .flatMap(invoice=>(invoice.items||[]).map((line,index)=>({invoice,line,index,price:sourcePrice(sale,invoice,line)})))\n   .filter(source=>Number.isFinite(source.price));\n }\n function remaining(source,except){\n  const {invoice,line,index}=source;\n  const used=returns.filter(r=>active(r)&&(same(r.invoiceId,invoice.id)||same(r.invoiceNumber,no(invoice))))\n   .flatMap(r=>r.items||[]).filter(z=>matches(z,line)).reduce((sum,z)=>sum+(Number(z.qty)||0),0);\n  const reserved=[...cart,...recorded].filter(z=>z!==except&&z.invoice===invoice&&z.index===index)\n   .reduce((sum,z)=>sum+z.qty,0);\n  const earlier=(invoice.items||[]).slice(0,index).filter(z=>matches(z,line))\n   .reduce((sum,z)=>sum+(Number(z.qty)||0),0);\n  const earlierUsed=Math.max(0,used-earlier)+reserved;\n  return Math.max(0,Math.floor(Number(line.qty)-earlierUsed));\n }\n function add(source){\n  if(remaining(source)<=0)return;\n  const current=cart.find(x=>x.invoice===source.invoice&&x.index===source.index&&!x.damaged);\n  if(current)current.qty++;else cart.push({...source,qty:1,damaged:false});\n  results.replaceChildren();query.value='';status.textContent='';render();\n }\n function sourceOptions(source){\n  return invoiceLines().filter(z=>matches(z.line,source.line)&&remaining(z,source)>0);\n }\n form.onsubmit=event=>{\n  event.preventDefault();results.replaceChildren();\n  if(!party.value){status.textContent='اختر الطرف أولًا.';return;}\n  const term=normal(query.value);\n  if(!term){status.textContent='أدخل اسم الصنف أو الباركود.';return;}\n  const found=[];\n  for(const source of invoiceLines()){\n   const {line}=source;\n   if((normal(line.barcode)===term||normal(line.name??line.product).includes(term))&&\n    remaining(source)>0&&!found.some(z=>matches(z.line,line)))found.push(source);\n  }\n  if(found.length===1){add(found[0]);return;}\n  status.textContent=found.length?'اختر الصنف.':'لا توجد كمية مؤهلة مطابقة لهذا الطرف.';\n  for(const source of found.slice(0,30))button(results,(source.line.name??source.line.product??'')+' · '+(source.line.barcode??''),()=>add(source));\n };\n party.onchange=()=>{cart=[];settings.clear();results.replaceChildren();status.textContent='';render();};\n function render(){\n  basket.replaceChildren();preview.replaceChildren();\n  for(const item of cart){\n   const card=node(basket,'article');\n   node(card,'strong',item.line.name??item.line.product??item.line.barcode);\n   const select=node(node(card,'label','الفاتورة الأصلية'),'select');\n   const sources=sourceOptions(item);\n   for(const [i,source] of sources.entries()){\n    const date=source.invoice.date?new Date(source.invoice.date).toLocaleDateString('ar-LB'):'';\n    option(select,i,[no(source.invoice),date,money(cents(source.price))].join(' · '));\n    if(source.invoice===item.invoice&&source.index===item.index)select.value=i;\n   }\n   select.onchange=()=>{const next=sources[Number(select.value)];Object.assign(item,next,{qty:Math.min(item.qty,remaining(next,item))});render();};\n   row(card,'المتاح للإرجاع',remaining(item,item));row(card,'قيمة السطر',money(cents(item.qty*item.price)));\n   const controls=node(card,'div');controls.className='r364-qty';\n   button(controls,'−',()=>{item.qty--;render();}).disabled=item.qty<=1;\n   node(controls,'b',item.qty);\n   button(controls,'+',()=>{item.qty++;render();}).disabled=item.qty>=remaining(item,item);\n   button(controls,'إزالة',()=>{cart=cart.filter(z=>z!==item);render();});\n   if(sale){\n    const label=node(card,'label','تالف  '),check=node(label,'input');check.type='checkbox';check.checked=item.damaged;\n    check.onchange=()=>{item.damaged=check.checked;render();};\n   }\n  }\n  if(!cart.length)return;\n  const totals=new Map();\n  for(const item of cart)totals.set(item.invoice,(totals.get(item.invoice)||0)+cents(item.qty*item.price));\n  node(preview,'h3','معاينة التسوية');\n  row(preview,'إجمالي المرتجع',money([...totals.values()].reduce((a,b)=>a+b,0)));\n  let valid=true;\n  const planned=[];\n  for(const [invoice,total] of totals){\n   const originalDebt=Number(window.pos265InvoiceDebtUSD?.(invoice)??invoice.debt);\n   if(!Number.isFinite(originalDebt)){valid=false;continue;}\n   const simulatedDebt=recorded.filter(x=>x.invoice===invoice).reduce((sum,x)=>sum+(x.debtApplied||0),0);\n   const debt=Math.max(0,cents(originalDebt)-simulatedDebt),cut=Math.min(debt,total),extra=total-cut;\n   const card=node(preview,'article');\n   node(card,'b',no(invoice));row(card,'تخفيض الدين',money(cut));row(card,'الدين المتبقي',money(debt-cut));\n   if(extra){\n    const select=node(node(card,'label','تسوية المتبقي'),'select');\n    option(select,'credit',sale?'رصيد لصالح العميل':'مبلغ مستحق لنا لدى المورد');\n    option(select,'cash',sale?'رد النقد فعليًا':'قبض النقد فعليًا');\n    select.value=settings.get(invoice)||'credit';\n    select.onchange=()=>{settings.set(invoice,select.value);render();};\n   }\n   const cash=settings.get(invoice)==='cash'?extra:0;\n   planned.push({invoice,cut,total,cash,credit:extra-cash});\n   row(card,'حركة الصندوق بالدولار',(cash?(sale?'−':'+'):'')+money(cash));\n   row(card,sale?'الرصيد لصالح العميل':'المستحق لنا لدى المورد',money(extra-cash));\n  }\n  row(preview,'تغير المخزون المتاح',String(cart.reduce((sum,z)=>sum+(sale?(z.damaged?0:z.qty):-z.qty),0)));\n  if(!valid)node(preview,'p','تعذر احتساب إحدى الفواتير.');\n  button(preview,'اعتماد تجريبي',()=>{\n   for(const p of planned){\n    const ref=(sale?'SRT':'PRT')+'-TEST-'+(++sequence);\n    row(history,ref+' · '+no(p.invoice),money(p.total));\n    if(p.cash)row(history,sale?'سند صرف تجريبي':'سند قبض تجريبي',money(p.cash));\n    const items=cart.filter(z=>z.invoice===p.invoice);items[0].debtApplied=p.cut;recorded.push(...items);\n   }\n   cart=[];settings.clear();status.textContent='تمت تجربة الاعتماد. لم تُرحّل حركة فعلية.';render();\n  }).disabled=!valid;\n }\n if(original){\n  const eligible=invoiceLines().filter(x=>x.invoice===original&&remaining(x)>0);\n  for(const source of eligible)button(results,source.line.name??source.line.barcode,()=>add(source));\n }\n dialog.showModal();\n};\n})();\n</script>\n"
+          p.write_text(h)
+          Path('/tmp/r364-html.sha').write_text(hashlib.sha256(p.read_bytes()).hexdigest())
+          PY
+      - name: Set upgrade versionCode
+        env:
+          INSTALLED_CODE: ${{ inputs.installed_version_code }}
+        run: |
+          python3 - <<'PY2'
+          import os
+          raw=os.getenv('INSTALLED_CODE','').strip()
+          if raw and (not raw.isascii() or not raw.isdecimal()):raise SystemExit('Invalid installed code')
+          code=max(2001046000+int(os.environ['GITHUB_RUN_NUMBER']),int(raw)+1 if raw else 0)
+          if code>2100000000:raise SystemExit('versionCode exceeds Android limit')
+          with open(os.environ['GITHUB_ENV'],'a') as f:f.write(f'POS7_VERSION_CODE={code}\n')
+          print('New tablet versionCode:',code)
+          PY2
+      - name: Verify original tablet release signing certificate
+        env:
+          POS7_KEYSTORE_BASE64: ${{ secrets.POS7_KEYSTORE_BASE64 }}
+          POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
+          POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
+          POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for k in POS7_KEYSTORE_BASE64 POS7_KEYSTORE_PASSWORD POS7_KEY_ALIAS POS7_KEY_PASSWORD; do test -n "${!k:-}" || { echo "Missing secret $k"; exit 1; }; done
+          umask 077
+          printf '%s' "$POS7_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/pos7-tablet-release.jks"
+          actual=$(keytool -exportcert -keystore "$RUNNER_TEMP/pos7-tablet-release.jks" -storepass:env POS7_KEYSTORE_PASSWORD -alias "$POS7_KEY_ALIAS" | sha256sum | awk '{print $1}')
+          expected='843ed618b18ec7a0cbb50f38984374540da016c41a8df8042bb8db19964d4495'
+          test "$actual" = "$expected" || { echo 'Original tablet signing certificate mismatch'; exit 1; }
+          echo "POS7_KEYSTORE_PATH=$RUNNER_TEMP/pos7-tablet-release.jks" >> "$GITHUB_ENV"
+          echo "POS7_SIGNING_CERT_SHA256=$actual" >> "$GITHUB_ENV"
+      - name: Build signed tablet APK
+        working-directory: r305-android/${{ matrix.branch }}/POS7_Tablet
+        env:
+          POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
+          POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
+          POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
+        run: gradle --no-daemon clean assembleRelease
+      - name: Verify final APK and package
+        run: |
+          set -euo pipefail
+          apk=r305-android/${{ matrix.branch }}/POS7_Tablet/app/build/outputs/apk/release/app-release.apk
+          sdk="$ANDROID_HOME/build-tools/35.0.0"
+          "$sdk/apksigner" verify --verbose "$apk"
+          python3 - <<'PY'
+          import zipfile
+          apk='r305-android/tab2/POS7_Tablet/app/build/outputs/apk/release/app-release.apk'
+          with zipfile.ZipFile(apk) as z:
+              source=z.read('assets/index.html').decode('utf-8')
+          assert source.count('المتجر الثاني — قاعدة مستقلة • 485.7.229-r364-tab2')==1
+          assert 'المتجر الثاني — قاعدة مستقلة • R215' not in source
+          assert 'POS7_RESTORE_PENDING_R305' in source
+          assert '<script src="local_restore_r323.js"></script>' in source
+          with zipfile.ZipFile(apk) as z:
+              localonly=z.read('assets/local_restore_r323.js').decode('utf8')
+              transfer=z.read('assets/restore_transfer.js').decode('utf8')
+          assert "localStorage.setItem(LOCAL,'yes')" in localonly
+          assert 'removeItem(RESTORE)' not in localonly
+          assert 'pos7_owner_publish' not in localonly
+          with zipfile.ZipFile(apk) as z:
+              same_device=z.read('assets/same_device_r324.js').decode('utf8')
+          assert '<script src="same_device_r324.js"></script>' in source
+          assert 'pos7_restore_same_device_r324' in same_device
+          assert 'pos7_restore_same_device_status_r324' in same_device
+          assert 'pos7_restore_same_device_r324' in transfer
+          assert 'pos7_restore_same_device_status_r324' in transfer
+          assert "localStorage.getItem(markerKey) &&" in transfer
+          assert "![" in transfer and "].includes(name)" in transfer
+          assert 'window.pos307HomeBatchInstalled=true' in source
+          assert 'pos7_inventory_mark_review_r346' in source
+          assert 'POS7_R348_SYNC_RESERVED' in source and 'waitPublisherIdle' in source
+          assert 'R345_wait_for_sync' not in source
+          assert 'POS7R361Txn' in source and 'pos7R354ShowCurrentAudit' in source and 'pos7_inventory_prepare_tab2_r362' in source
+          import hashlib
+          assert source.count('id="pos7-r364-return-cards"')==1
+          assert 'pos7_inventory_repair_revisions_tab2_r345' in source
+          assert 'jdcolkgzwqpwbfvcrdje' not in source
+          assert 'https://rmskuolsiqbzxuakofpb.supabase.co' in source
+          import hashlib
+          from pathlib import Path
+          assert hashlib.sha256(source.encode()).hexdigest()==Path('/tmp/r364-html.sha').read_text()
+          print('Signed APK contains exact final Tab2 source and preserved restore modules')
+          PY
+          "$sdk/aapt" dump badging "$apk" | grep -F "package: name='com.sokkarzeyedeh.pos7' versionCode='$POS7_VERSION_CODE' versionName='485.7.229-r364-${{ matrix.branch }}'"
+          actual=$("$sdk/apksigner" verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2}' | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')
+          test "$actual" = "$POS7_SIGNING_CERT_SHA256"
+          mkdir -p output
+          cp "$apk" output/POS7_Tablet_R364_${{ matrix.branch }}.apk
+          sha256sum output/*.apk > output/SHA256SUMS.txt
+          printf 'versionName=485.7.229-r364-${{ matrix.branch }}\nversionCode=%s\n' "$POS7_VERSION_CODE" > output/build-info.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: POS7-Tablet-R364-${{ matrix.branch }}-${{ env.POS7_VERSION_CODE }}
+          path: output/
+          if-no-files-found: error
+      - name: Delete temporary signing material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/pos7-tablet-release.jks"
