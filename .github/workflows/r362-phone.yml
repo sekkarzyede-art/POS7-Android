@@ -1,0 +1,223 @@
+name: POS7 R362 Owner Phone - Store2 confirmed inventory recovery
+on:
+  push:
+    branches: [fix/phone-r257-store-switch]
+    paths: ['.github/workflows/r362-phone.yml']
+  workflow_dispatch:
+    inputs:
+      installed_phone_code:
+        description: 'Optional currently installed phone versionCode'
+        required: false
+        default: ''
+        type: string
+      installed_tablet_code:
+        description: 'Unused for phone-only build'
+        required: false
+        default: ''
+        type: string
+permissions:
+  contents: read
+jobs:
+  build:
+    name: Signed ${{ matrix.kind }} release
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - kind: Phone
+            project: POS7_Owner_Phone
+            package: com.sokkarzeyedeh.pos7owner
+            version: 485.7.143-r362-phone
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Reconstruct verified R255 source and apply tested R256
+        run: |
+          python3 pos7-release-audit/r255/reconstruct.py
+          python3 pos7-release-audit/r256/prepare.py
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Android SDK
+        uses: android-actions/setup-android@v4
+      - name: Install SDK 35
+        run: sdkmanager --install 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Extract and validate the unified source
+        env:
+          PROJECT: ${{ matrix.project }}
+          EXPECTED_PACKAGE: ${{ matrix.package }}
+          EXPECTED_VERSION: ${{ matrix.version }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import zipfile,os
+          from pathlib import Path
+          src=Path('POS7_R256_PHONE_ANDROID_SOURCE.zip')
+          if not src.is_file(): raise SystemExit('Missing POS7_R256_PHONE_ANDROID_SOURCE.zip at repository root')
+          dest=Path('android-project').resolve()
+          with zipfile.ZipFile(src) as z:
+            for info in z.infolist():
+              if not (dest/info.filename).resolve().is_relative_to(dest):
+                raise SystemExit('Unsafe zip entry')
+            z.extractall(dest)
+          app=dest/os.environ['PROJECT']
+          import subprocess
+          subprocess.run(['python3','pos7-release-audit/r257/apply_switch.py',str(app/'app/src/main/assets/index.html')],check=True)
+          subprocess.run(['python3','pos7-release-audit/r362/patch_phone.py',str(app/'app/src/main/assets/index.html')],check=True)
+          g=app/'app/build.gradle'
+          old=g.read_text('utf-8')
+          assert old.count("versionName '485.7.143-r256-phone'")==1
+          g.write_text(old.replace("versionName '485.7.143-r256-phone'","versionName '485.7.143-r362-phone'"),encoding='utf-8')
+          gradle=(app/'app/build.gradle').read_text('utf-8')
+          html=(app/'app/src/main/assets/index.html').read_text('utf-8')
+          assert ('applicationId \''+os.environ['EXPECTED_PACKAGE']+'\'') in gradle, 'Unexpected application ID'
+          assert ('versionName \''+os.environ['EXPECTED_VERSION']+'\'') in gradle, 'Unexpected versionName'
+          assert 'pos7_owner_snapshot' in html, 'Missing POS7 cloud sync source'
+          assert 'samePhotoContext' in html and 'photoCheck' in html, 'Missing R254 photo session guards'
+          assert 'POS7R256QueueRun' in html and 'reloadStoreAppearance' in html and 'POS7InventoryResetUI' in html, 'Missing R256 features'
+          assert 'android.permission.CAMERA' in (app/'app/src/main/AndroidManifest.xml').read_text(), 'Missing camera declaration'
+          assert 'onPermissionRequest' in (app/'app/src/main/java/com/sokkarzeyedeh/pos7owner/MainActivity.java').read_text(), 'Missing WebView camera permission'
+          assert (app/'app/src/main/java').exists(), 'Missing Android Java source'
+          print('Validated',os.environ['PROJECT'],os.environ['EXPECTED_VERSION'])
+          PY
+      - name: Check JavaScript sources
+        env:
+          PROJECT: ${{ matrix.project }}
+        run: |
+          python3 - <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+          import subprocess,os
+          class P(HTMLParser):
+            def __init__(self): super().__init__(); self.active=False; self.parts=[]
+            def handle_starttag(self,t,a):
+              if t=='script': self.active=True; self.parts.append('')
+            def handle_endtag(self,t):
+              if t=='script': self.active=False
+            def handle_data(self,t):
+              if self.active: self.parts[-1]+=t
+          p=P();p.feed(Path('android-project',os.environ['PROJECT'],'app/src/main/assets/index.html').read_text('utf-8'))
+          for i,js in enumerate(p.parts):
+            if not js.strip(): continue
+            Path('/tmp/pos7-check.js').write_text(js)
+            subprocess.run(['node','--check','/tmp/pos7-check.js'],check=True)
+          print(len(p.parts),'script tags inspected')
+          PY
+      - name: Run R256 regression simulations
+        working-directory: android-project/POS7_Owner_Phone
+        run: |
+          node test_r256.cjs
+          node test_r256_batch.cjs
+      - name: Run R257 account switching simulations
+        run: node pos7-release-audit/r257/switch_tests.cjs android-project/POS7_Owner_Phone/app/src/main/assets/index.html
+      - name: Run R362 Store2 confirmed inventory recovery simulations
+        run: node pos7-release-audit/r362/test_phone_r362.cjs android-project/POS7_Owner_Phone/app/src/main/assets/index.html
+      - name: Determine upgrade versionCode
+        env:
+          KIND: ${{ matrix.kind }}
+          INSTALLED_PHONE: ${{ inputs.installed_phone_code }}
+          INSTALLED_TABLET: ${{ inputs.installed_tablet_code }}
+        run: |
+          python3 - <<'PY'
+          import os
+          raw=(os.getenv('INSTALLED_PHONE') if os.getenv('KIND')=='Phone' else os.getenv('INSTALLED_TABLET')) or ''
+          raw=raw.strip()
+          if raw and not (raw.isascii() and raw.isdecimal()): raise SystemExit('Installed code must be decimal digits')
+          value=max(2002004000+int(os.environ['GITHUB_RUN_NUMBER']),int(raw)+1 if raw else 0)
+          if value>2100000000: raise SystemExit('versionCode too high')
+          with open(os.environ['GITHUB_ENV'],'a') as fp:fp.write('POS7_VERSION_CODE='+str(value)+'\n')
+          print('New versionCode:',value)
+          if not raw: print('WARNING: supply installed versionCode for explicit upgrade check')
+          PY
+      - name: Inject original Firebase for owner phone only
+        if: matrix.kind == 'Phone'
+        env:
+          POS7_FIREBASE_JSON_BASE64: ${{ secrets.POS7_FIREBASE_JSON_BASE64 }}
+        run: |
+          set -euo pipefail
+          test -n "${POS7_FIREBASE_JSON_BASE64:-}" || { echo 'Missing POS7_FIREBASE_JSON_BASE64'; exit 1; }
+          umask 077
+          printf '%s' "$POS7_FIREBASE_JSON_BASE64" | base64 --decode > android-project/POS7_Owner_Phone/app/google-services.json
+          python3 - <<'PY'
+          import json
+          j=json.load(open('android-project/POS7_Owner_Phone/app/google-services.json'))
+          assert j['project_info']['project_id']=='pos7-owner-notifications','Wrong Firebase project'
+          assert 'com.sokkarzeyedeh.pos7owner' in [x['client_info']['android_client_info']['package_name'] for x in j['client']],'Wrong Firebase Android app'
+          PY
+      - name: Restore and validate original signing key
+        env:
+          POS7_KEYSTORE_BASE64: ${{ secrets.POS7_KEYSTORE_BASE64 }}
+          POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
+          POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
+          POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for v in POS7_KEYSTORE_BASE64 POS7_KEYSTORE_PASSWORD POS7_KEY_ALIAS POS7_KEY_PASSWORD; do
+            test -n "${!v:-}" || { echo "Missing signing secret: $v"; exit 1; }
+          done
+          umask 077
+          keyfile="$RUNNER_TEMP/pos7-release.jks"
+          printf '%s' "$POS7_KEYSTORE_BASE64" | base64 --decode > "$keyfile"
+          actual=$(keytool -exportcert -keystore "$keyfile" -storepass:env POS7_KEYSTORE_PASSWORD -alias "$POS7_KEY_ALIAS" | sha256sum | awk '{print $1}')
+          expected='843ed618b18ec7a0cbb50f38984374540da016c41a8df8042bb8db19964d4495'
+          test "$actual" = "$expected" || { echo 'Wrong original signing certificate'; exit 1; }
+          echo "POS7_SIGNING_CERT_SHA256=$actual" >> "$GITHUB_ENV"
+          echo "POS7_KEYSTORE_PATH=$keyfile" >> "$GITHUB_ENV"
+      - name: Assemble signed release
+        working-directory: android-project/${{ matrix.project }}
+        env:
+          POS7_KEYSTORE_PASSWORD: ${{ secrets.POS7_KEYSTORE_PASSWORD }}
+          POS7_KEY_ALIAS: ${{ secrets.POS7_KEY_ALIAS }}
+          POS7_KEY_PASSWORD: ${{ secrets.POS7_KEY_PASSWORD }}
+        run: gradle --no-daemon clean assembleRelease
+      - name: Verify signed APK and package
+        env:
+          PROJECT: ${{ matrix.project }}
+          PACKAGE: ${{ matrix.package }}
+          VERSION: ${{ matrix.version }}
+          KIND: ${{ matrix.kind }}
+        run: |
+          set -euo pipefail
+          apk="android-project/$PROJECT/app/build/outputs/apk/release/app-release.apk"
+          test -s "$apk"
+          tool="$ANDROID_HOME/build-tools/35.0.0"
+          "$tool/apksigner" verify --verbose "$apk"
+          "$tool/aapt" dump badging "$apk" > "$RUNNER_TEMP/badging.txt"
+          grep -F "package: name='$PACKAGE' versionCode='$POS7_VERSION_CODE' versionName='$VERSION'" "$RUNNER_TEMP/badging.txt"
+          actual=$("$tool/apksigner" verify --print-certs "$apk" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2}' | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')
+          test "$actual" = "$POS7_SIGNING_CERT_SHA256" || { echo 'Unexpected APK signing certificate'; exit 1; }
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile,hashlib
+          p=Path('android-project/POS7_Owner_Phone/app/src/main/assets/index.html')
+          with zipfile.ZipFile('android-project/POS7_Owner_Phone/app/build/outputs/apk/release/app-release.apk') as z:
+              b=z.read('assets/index.html')
+          assert hashlib.sha256(b).digest()==hashlib.sha256(p.read_bytes()).digest()
+          assert b'POS7R257SwitchBusy' in b and b'r257MergeQueue' in b
+          assert b'recoverLocalReviewsR362' in b and b'r362Eligible' in b
+          print('Exact tested R362 assets are in signed APK')
+          PY
+          mkdir -p output
+          cp "$apk" "output/POS7_${KIND}_R362.apk"
+          sha256sum output/*.apk > output/SHA256SUMS.txt
+          printf 'Package=%s\nVersionName=%s\nVersionCode=%s\nCertificate=%s\n' "$PACKAGE" "$VERSION" "$POS7_VERSION_CODE" "$actual" > output/build-info.txt
+      - name: Upload signed APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: POS7-${{ matrix.kind }}-R362-${{ env.POS7_VERSION_CODE }}
+          path: output/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Delete temporary secrets
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/pos7-release.jks"
+          rm -f android-project/POS7_Owner_Phone/app/google-services.json
