@@ -1,0 +1,42 @@
+<script id="pos7-r376-credit-payout">
+(function(){'use strict';
+const T=window.POS7R367Txn,E=window.POS7R365;
+const accounts={cashier_usd:'الكاشير — دولار',cashier_lbp:'الكاشير — ليرة',main_usd:'الصندوق الكبير — دولار',main_lbp:'الصندوق الكبير — ليرة'};
+const codes={cashier_usd:'1111',cashier_lbp:'1112',main_usd:'1113',main_lbp:'1114'};
+const cents=x=>Math.round(Number(x)*100),money=x=>Number(x).toFixed(2)+' $';
+let busy=false;
+function credit(name){if(!name||name==='زبون نقدي'||!window.v250Can?.('customers'))return 0;const balance=Number(window.pos398CustomerStatementBalanceUSD(name));return Number.isFinite(balance)&&cents(balance)<0?-cents(balance):0;}
+function quote(name,account,raw,full){
+ if(!window.v250Can?.('customers'))throw Error('لا توجد صلاحية');
+ if(window.pos310PurchaseActive?.()||window.pos789SyncIsBusy?.()||window.POS7_R212_BATCH_ACTIVE||window.POS7_R166_RELOAD_REQUIRED)throw Error('انتظر اكتمال الحفظ أو المزامنة');
+ if(typeof editingSaleId!=='undefined'&&editingSaleId!=null&&(state.sales||[]).some(x=>String(x.id)===String(editingSaleId)&&x.customer===name))throw Error('أنه تعديل فاتورة العميل أولاً');
+ const due=credit(name);if(!Number.isSafeInteger(due)||due<=0)throw Error('لا يوجد رصيد مستحق للعميل');
+ if(!Object.hasOwn(accounts,account))throw Error('اختر الصندوق');
+ const currency=account.endsWith('_lbp')?'LBP':'USD',rate=Number(state.fxRate);if(!Number.isFinite(rate)||rate<=0)throw Error('سعر الصرف غير صالح');
+ const scale=currency==='USD'?100:1,amount=full?(currency==='USD'?due/100:Math.round(due*rate/100)):Number(raw);
+ if(!Number.isFinite(amount)||amount<=0||!Number.isSafeInteger(Math.round(amount*scale))||Math.abs(amount*scale-Math.round(amount*scale))>1e-5)throw Error('أدخل مبلغاً صحيحاً');
+ const c=cents(currency==='USD'?amount:amount/rate);if(c<=0||c>due||(full&&c!==due))throw Error('المبلغ يتجاوز الرصيد أو لا يطابق التسديد الكامل');
+ const available=Number(mcBalance(account));if(!Number.isFinite(available)||available+1e-8<amount)throw Error('رصيد الصندوق غير كافٍ');
+ const related=(state.salesReturns||[]).filter(x=>E.active(x)&&x.r365&&x.customer===name&&Number(x.creditAmountUSD)>0).sort((a,b)=>Date.parse(b.date)-Date.parse(a.date));if(!related.length)throw Error('لا يوجد مرتجع دائن معتمد لهذا العميل');
+ return {name,account,currency,rate,amount,amountUSD:c/100,before:-due/100,after:(c-due)/100,returnId:related[0].id,returnNumber:related[0].number,reason:c===due?'تسديد كامل الرصيد المستحق للعميل':'دفعة من الرصيد المستحق للعميل'};
+}
+function commit(p){if(busy)return null;busy=true;let v=null;try{
+ const fresh=quote(p.name,p.account,p.amount,p.after===0);if(JSON.stringify(fresh)!==JSON.stringify(p))throw Error('تغير الرصيد أو الصندوق؛ راجع العملية');
+ const ok=T.run(()=>{const before=Number(mcBalance(p.account)),date=new Date().toISOString(),ref=pos98NextRef('supplierPayment'),id=T.id('CP'),part={account:p.account,currency:p.currency,amount:p.amount,amountUSD:p.amountUSD};
+ const reason=p.reason+' — الرصيد السابق '+money(p.before)+' — المتبقي '+money(p.after);
+ v={id,number:ref,ref,voucherNo:ref,voucherType:'سند صرف',kind:'return_payment',partyType:'customer',customer:p.name,date,amount:p.amount,paidAmount:p.amount,amountUSD:p.amountUSD,equivalentUSD:p.amountUSD,account:p.account,currency:p.currency,fxRate:p.rate,payments:[part],returnId:p.returnId,returnNumber:p.returnNumber,reason,note:reason,previousBalanceUSD:p.before,balanceAfterUSD:p.after,r376CreditPayout:true,r365:true,r366:true,cancelled:false,user:window.v250CurrentActor?.()||null};
+ state.returnVouchers??=[];state.returnVouchers.push(v);const start=state.mcLedger.length;
+ mcPost([part],-1,ref,'سند صرف — خروج -'+p.amountUSD.toFixed(2)+'$ — '+reason,p.name,date);
+ const rows=state.mcLedger.slice(start);if(rows.length!==1||rows[0].ref!==ref||Math.abs(Number(rows[0].amount)+p.amount)>1e-8)throw Error('حركة الصندوق غير مطابقة');
+ Object.assign(rows[0],{amountUSD:-p.amountUSD,fxRate:p.rate,exchangeRate:p.rate,voucherId:id,returnId:p.returnId});
+ v.r367Journal={sourceType:'return_payment',sourceId:id,reference:ref,date,description:'سند صرف — '+reason,lines:[{account:'1130',debitUSD:p.amountUSD,creditUSD:0,currency:'USD',amountOriginal:p.amountUSD,exchangeRate:1},{account:codes[p.account],debitUSD:0,creditUSD:p.amountUSD,currency:p.currency,amountOriginal:p.amount,exchangeRate:p.rate}]};window.pos7PostJournalEntry(v.r367Journal);
+ if(cents(window.pos398CustomerStatementBalanceUSD(p.name))!==cents(p.after)||Math.abs(Number(mcBalance(p.account))-(before-p.amount))>1e-6)throw Error('عدم تطابق الرصيد بعد الصرف');
+ });if(!ok)return null;try{window.pos307MarkHomeDirty?.();window.v250Audit?.('CUSTOMER_CREDIT_PAYOUT',v.ref,{docId:v.id,value:p.amountUSD,before:p.before,after:p.after,reason:p.reason});}catch(e){console.warn('R376 audit',e)}return v;
+ }catch(e){toast(e.message||'تعذر حفظ سند الصرف');return null}finally{busy=false}}
+window.POS7R376Credit={credit,quote,commit};
+function el(p,t,s){const e=document.createElement(t);if(s!=null)e.textContent=s;p.append(e);return e;}
+function button(p,s,f){const b=el(p,'button',s);b.type='button';b.className='soft';b.onclick=f;return b;}
+window.pos376CreditButton=function(box,name,refresh){if(!box||!credit(name))return;const panel=document.createElement('div');panel.className='panel';panel.style.cssText='border:1px solid #cbd9e8;padding:10px;margin-bottom:8px';el(panel,'strong','رصيد لصالح العميل: '+money(-credit(name)/100));const b=button(panel,'سند صرف للعميل',()=>open(name,refresh));b.className='primary';b.style.marginInlineStart='10px';box.prepend(panel);};
+function open(name,refresh){if(!credit(name))return toast('لا يوجد رصيد مستحق للعميل');document.getElementById('r376Dialog')?.remove();const d=el(document.body,'dialog');d.id='r376Dialog';d.dir='rtl';d.style.cssText='width:min(460px,92vw);border:1px solid #cbd9e8;border-radius:14px;padding:16px';d.onclose=()=>d.remove();el(d,'h3','سند صرف للعميل — '+name);el(d,'p','الرصيد الحالي: '+money(-credit(name)/100));el(d,'label','الصندوق والعملة');const sel=el(d,'select');for(const [a,l] of Object.entries(accounts)){const o=el(sel,'option',l);o.value=a;}sel.value='cashier_usd';el(d,'label','المبلغ بعملة الصندوق');const input=el(d,'input');input.type='number';input.min='0';input.step='0.01';input.inputMode='decimal';const info=el(d,'p','');function update(){input.step=sel.value.endsWith('_lbp')?'1':'0.01';try{const p=quote(name,sel.value,input.value,false);info.textContent='المتبقي: '+money(p.after);}catch(e){info.textContent=input.value?e.message:'';}}input.oninput=update;sel.onchange=()=>{input.value='';update()};let done=false;function save(full){if(done||busy)return;try{const p=quote(name,sel.value,input.value,full);if(!confirm(p.reason+' — '+name+'\n'+money(p.amountUSD)+'\n'+accounts[p.account]+' — '+p.amount+' '+p.currency+'\nالمتبقي: '+money(p.after)))return;done=true;const v=commit(p);if(!v){done=false;return;}d.close();try{refresh?.();}catch(e){console.warn(e)}toast('تم حفظ '+v.ref);window.pos366VoucherAction(v.id,'view');}catch(e){done=false;toast(e.message);}}button(d,'تسجيل دفعة',()=>save(false));button(d,'تسديد كامل الحساب',()=>save(true));button(d,'إغلاق',()=>d.close());d.showModal();}
+})();
+</script>
