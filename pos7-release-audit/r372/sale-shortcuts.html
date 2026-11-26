@@ -1,0 +1,42 @@
+<style id="pos7-r372-sale-shortcuts-style">
+#sales.r372-shortcuts-ready .pos7-sale-heading{display:flex!important;flex-wrap:wrap!important;align-items:center!important;justify-content:center!important;gap:6px!important;min-height:44px!important}
+#sales.r372-shortcuts-ready .pos7-sale-heading>h2{flex:1 0 100%;font-size:17px!important;margin:0!important}
+#sales.r372-shortcuts-ready .pos7-sale-heading>.back,#sales.r372-shortcuts-ready .pos7-sale-heading>.pos414-reprint-entry,#sales.r372-shortcuts-ready #r369SaleInquiry,#sales.r372-shortcuts-ready #pos440CustomerPriceButton,#sales.r372-shortcuts-ready .pos383-audit-sales-shortcut,#sales.r372-shortcuts-ready #pos486LowStockToggle,#sales.r372-shortcuts-ready #pos486SaleAlerts>.pos486-expiry-head{display:none!important}
+#sales.r372-shortcuts-ready #pos486SaleAlerts:not(:has(.pos486-low-panel,.pos486-expiry-list)){display:none!important}
+#sales.r372-shortcuts-ready #pos486SaleAlerts:has(.pos486-low-panel,.pos486-expiry-list){display:block!important}
+#sales.r372-shortcuts-ready .pos485-audit-shortcut-row:not(:has(> :not(#pos440CustomerPriceButton,#pos486LowStockToggle,.pos383-audit-sales-shortcut))){display:none!important}
+#sales #r372Tools{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:7px;flex:1 1 100%;margin:0;direction:rtl;position:relative;overflow:visible}
+#sales #r372Tools .r372-tool{position:relative;display:inline-flex!important;align-items:center;justify-content:center;width:44px!important;height:44px!important;min-width:44px!important;min-height:44px!important;max-width:44px!important;flex:0 0 44px!important;padding:0!important;margin:0!important;border-radius:50%!important;border:1px solid currentColor!important;background:#fff!important;color:var(--r372-color,#164e8b);box-shadow:0 1px 3px #193b5820;touch-action:manipulation;overflow:visible!important}
+#sales #r372Tools .r372-tool svg{width:23px;height:23px;pointer-events:none;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+#sales #r372Tools .r372-tool[aria-pressed="true"]{background:var(--r372-color,#164e8b)!important;color:white!important;border-color:var(--r372-color,#164e8b)!important;outline:2px solid #a9c7e5;outline-offset:2px}
+#sales #r372Tools .r372-count{position:absolute;top:-4px;left:-4px;background:#b91c1c;color:white;min-width:17px;height:17px;padding:0 3px;box-sizing:border-box;border-radius:10px;font:700 10px/17px sans-serif;pointer-events:none;white-space:nowrap}
+#sales #r372Tools .r372-count[hidden]{display:none!important}
+#sales #r372Name{flex:1 0 100%;min-height:24px;text-align:center;font-size:13px;font-weight:800;color:#163b65;background:#e9f2fc;border-radius:7px;padding:4px 8px;box-sizing:border-box}
+#sales #r372Name[hidden]{display:none!important}
+@media(max-width:420px){#sales #r372Tools{gap:4px}#sales #r372Tools .r372-tool{width:40px!important;height:40px!important;min-width:40px!important;min-height:40px!important;max-width:40px!important;flex-basis:40px!important}}
+</style>
+<script id="pos7-r372-sale-shortcuts">
+(function(){'use strict';
+const sales=document.getElementById('sales'),head=sales?.querySelector('.pos7-sale-heading');if(!head||document.getElementById('r372Tools'))return;
+const specs=[
+['home','العودة للرئيسية','#173e6b','.pos7-sale-heading>.back','<path d="M19 12H5m7-7-7 7 7 7"/>'],
+['print','إعادة الطباعة','#245c96','.pos414-reprint-entry button','<path d="M6 9V3h12v6M6 17H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2M6 14h12v7H6zM18 12h.01"/>'],
+['inquiry','استعلام رصيد','#087f77','#r369SaleInquiry','<circle cx="10" cy="10" r="7"/><path d="m15 15 6 6M10 6v8m2.5-6H9a1.5 1.5 0 0 0 0 3h2a1.5 1.5 0 0 1 0 3H7.5"/>'],
+['price','السعر الخاص للزبون','#7650a6','#pos440CustomerPriceButton','<path d="M20 13 11 22 2 13V3h10l8 8a1.5 1.5 0 0 1 0 2Z"/><circle cx="7" cy="8" r="1.5"/>'],
+['audit','جرد اليوم — 5 أصناف','#136c45','.pos383-audit-sales-shortcut','<rect x="5" y="4" width="14" height="18" rx="2"/><rect x="9" y="2" width="6" height="4" rx="1"/><path d="m8 11 2 2 4-4m-6 8 2 2 4-4"/>'],
+['expiry','منتجات شارفت على انتهاء الصلاحية','#a45d00','#pos486SaleAlerts .pos486-expiry-toggle','<path d="M6 2h12M6 22h12M7 2v4c0 3 5 4 5 6s-5 3-5 6v4m10-20v4c0 3-5 4-5 6s5 3 5 6v4"/>'],
+['stock','تنبيه المخزون','#b42318','#pos486LowStockToggle','<path d="M3 7 12 3l9 4v10l-9 4-9-4V7zm0 0 9 4 9-4m-9 4v10M12 13v3m0 2h.01"/>']
+];
+const bar=document.createElement('div');bar.id='r372Tools';bar.setAttribute('role','group');bar.setAttribute('aria-label','اختصارات البيع');const label=document.createElement('div');label.id='r372Name';label.setAttribute('role','status');label.setAttribute('aria-live','polite');label.hidden=true;let armed=null;const buttons=new Map();
+function clear(){if(armed){buttons.get(armed)?.setAttribute('aria-pressed','false');armed=null;}label.hidden=true;label.textContent='';}
+function name(s){if(s[0]==='audit'){const n=document.getElementById('pos383AuditBadge')?.textContent?.trim();return 'جرد اليوم — '+(n||'5')+' أصناف';}return s[1];}
+function showEmpty(s){if(typeof window.toast==='function')window.toast(s[0]==='expiry'?'لا توجد منتجات قاربت صلاحيتها على الانتهاء':'لا توجد تنبيهات مخزون حالياً');}
+for(const s of specs){const b=document.createElement('button');b.type='button';b.className='r372-tool';b.dataset.tool=s[0];b.style.setProperty('--r372-color',s[2]);b.setAttribute('aria-label',s[1]);b.setAttribute('aria-pressed','false');b.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true">'+s[4]+'</svg><span class="r372-count" hidden></span>';buttons.set(s[0],b);bar.append(b);b.addEventListener('click',function(e){e.stopPropagation();if(armed!==s[0]){clear();armed=s[0];b.setAttribute('aria-pressed','true');label.textContent=name(s);label.hidden=false;return;}clear();const original=sales.querySelector(s[3]);if((s[0]==='expiry'&&!original)||(s[0]==='stock'&&(!original||original.style.display==='none'))){showEmpty(s);return;}if(original&&!original.disabled)original.click();});}
+bar.append(label);head.append(bar);sales.classList.add('r372-shortcuts-ready');
+function countText(text){const m=String(text||'').match(/\((\d+)\)/);return m?Number(m[1]):0;}
+function count(id,n,show){const x=buttons.get(id).querySelector('.r372-count');const value=n>99?'99+':String(n);if(x.textContent!==value)x.textContent=value;x.hidden=!show;}
+function sync(){const a=document.getElementById('pos383AuditBadge'),low=document.getElementById('pos486LowStockToggle'),exp=sales.querySelector('#pos486SaleAlerts .pos486-expiry-title');count('audit',Number(a?.textContent)||5,true);const l=low&&low.style.display!=='none'?countText(low.textContent):0;count('stock',l,l>0);const n=countText(exp?.textContent);count('expiry',n,n>0);}
+const row=sales.querySelector('.pos485-audit-shortcut-row');const alerts=document.getElementById('pos486SaleAlerts');const obs=new MutationObserver(sync);if(row)obs.observe(row,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['style']});if(alerts)obs.observe(alerts,{childList:true,subtree:true,characterData:true});const audit=document.getElementById('pos383AuditBadge');if(audit)obs.observe(audit,{childList:true,characterData:true,subtree:true});
+const pageObserver=new MutationObserver(()=>{if(!sales.classList.contains('active'))clear();});pageObserver.observe(sales,{attributes:true,attributeFilter:['class']});document.addEventListener('click',e=>{if(!bar.contains(e.target))clear();},true);document.addEventListener('keydown',e=>{if(e.key==='Escape')clear();});document.addEventListener('visibilitychange',()=>{if(document.hidden)clear();});sync();window.addEventListener('DOMContentLoaded',sync);setTimeout(()=>{const a=document.getElementById('pos486SaleAlerts');if(a&&a!==alerts)obs.observe(a,{childList:true,subtree:true,characterData:true});sync();},350);
+})();
+</script>
