@@ -1,0 +1,16 @@
+const assert=require('node:assert/strict'), fs=require('node:fs'), vm=require('node:vm');
+const html=fs.readFileSync(process.argv[2],'utf8');
+const js=html.slice(html.indexOf('function restoreFreshBackup('),html.indexOf('function showFreshRestore('));
+let native=null, old=null, allow=true, writes=0;
+const ctx={MAIN:'key',window:{localStorage:{}},oldGet(){return old},verifyStoredProject(){},nativeRead(){return native},valid(raw){const data=JSON.parse(raw);if(!data.products||!data.sales||!data.purchases)throw Error('bad')},bridge:{pos322WriteState(raw){writes++;if(!allow)return false;native=raw;return true}}};
+vm.createContext(ctx);vm.runInContext(js,ctx);
+const backup=()=>({app:'POS7',data:{products:[{id:1,stock:3,stock_revision:7}],sales:[{id:2}],purchases:[]}});
+assert.throws(()=>ctx.restoreFreshBackup({app:'other'}));
+old='existing';assert.throws(()=>ctx.restoreFreshBackup(backup()));old=null;
+assert.equal(writes,0);
+allow=false;assert.throws(()=>ctx.restoreFreshBackup(backup()));assert.equal(native,null);
+allow=true;ctx.restoreFreshBackup(backup());
+const restored=JSON.parse(native);assert.equal(restored.sales[0].id,2);assert.equal(restored.products[0].stock,3);assert.equal(restored.products[0].stock_revision,null);
+assert.equal(restored.pos7R387LocalRestore,true);
+assert.throws(()=>ctx.restoreFreshBackup(backup()));assert.equal(writes,2);
+console.log('Fresh restore rejects replacement and preserves recovered sales and stock');
