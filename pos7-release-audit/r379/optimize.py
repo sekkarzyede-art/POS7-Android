@@ -10,14 +10,14 @@ def replace(a,b):
  assert s.count(a)==1,(a[:100],s.count(a))
  s=s.replace(a,b,1)
 # Do not write unchanged diagnostic text; do not recompute diagnostics for an invisible existing panel.
-replace("function showDiag(){let el=document.getElementById('pos177SyncDetails');", "function showDiag(){let el=document.getElementById('pos177SyncDetails');if(el&&!el.closest('.page')?.classList.contains('active'))return;")
+# Keep status current even when hidden; deduplicate DOM writes only.
 replace("el.textContent='المرحلة: '+diag.stage+", "const text='المرحلة: '+diag.stage+")
 replace("ثانية، عند توفر الاتصال وانتهاء الفاتورة.':'');}", "ثانية، عند توفر الاتصال وانتهاء الفاتورة.':'');if(el.textContent!==text)el.textContent=text;}")
 # Keep list filtering bound to the current DOM after rerender, with one listener per input.
-replace('inp.addEventListener("input",filter)}function filter(){var q=S(inp.value);list.querySelectorAll(".line").forEach(function(row){row.style.display=!q||S(row.textContent).includes(q)?"":"none"})}filter();return r', 'inp.addEventListener("input",function(){inp._r379Filter?.()})}var rows=Array.from(list.querySelectorAll(".line"));inp._r379Filter=function(){var q=S(inp.value);rows.forEach(function(row){var next=!q||S(row.textContent).includes(q)?"":"none";if(row.style.display!==next)row.style.display=next})};inp._r379Filter();return r')
+replace('inp.addEventListener("input",filter)}function filter(){var q=S(inp.value);list.querySelectorAll(".line").forEach(function(row){row.style.display=!q||S(row.textContent).includes(q)?"":"none"})}filter();return r', 'inp.addEventListener("input",function(){inp._r379Filter?.()})}inp._r379Filter=function(){var q=S(inp.value);list.querySelectorAll(".line").forEach(function(row){var next=!q||S(row.textContent).includes(q)?"":"none";if(row.style.display!==next)row.style.display=next})};inp._r379Filter();return r')
 # Reuse current period sales only within the synchronous report render, never across writes.
-replace('function pos100Group(mode){let map=new Map();for(let sale of pos100SalesInRange())', 'function pos100Group(mode,periodSales){let map=new Map();for(let sale of (periodSales||pos100SalesInRange()))')
-replace('data=pos100Group(pos100ReportMode),rows=data.map', 'data=pos100Group(pos100ReportMode,sales),rows=data.map')
+# Existing R715 report cache remains authoritative.
+# Do not alter legacy/overridden report grouping.
 # No persistent caches of accounting data, no changes to publication schedule.
 # On-demand bounded measurement, automatically remove observers/listeners.
 marker='<script id="pos7-r379-perf-diagnostics">'
