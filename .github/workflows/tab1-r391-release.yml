@@ -358,7 +358,7 @@ jobs:
           cp "$html" /tmp/pos7-r390.html
           python3 pos7-release-audit/r391/apply.py "$html" build
           node pos7-release-audit/r391/test.cjs /tmp/pos7-r390.html "$html"
-          echo 'd98d1aca47db87d2ba9b64d1477170a04001d44511bdd92014a71f37d8d20566  '"$html" | sha256sum -c -
+          echo '7c5c304182d1e96f9044324e111465d7f20f66b33a71a8f1772466d37bb22bd0  '"$html" | sha256sum -c -
       - name: Verify all candidate inline scripts
         run: |
           python3 - <<'PY'

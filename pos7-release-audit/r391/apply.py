@@ -35,6 +35,9 @@ edit("function profit(name){\n var host=", "function profit(name){\n if(pos391Pr
 edit("window.renderQueries=function(){if(queryType==='cashbox')", "window.renderQueries=function(){if(pos391Private&&['movement','cashbox','profitCustomer','profitProduct'].includes(queryType)){document.getElementById('queryList')?.replaceChildren();return;}if(queryType==='cashbox')")
 edit("if(pos391Private&&/(ربح|ارباح|أرباح|ال,?كلفة|صندوق|هامش|profit|margin)/i.test(raw))", "if(pos391Private&&/(ربح|ارباح|أرباح|كلفة|تكلفة|صندوق|هامش|profit|margin)/i.test(raw))")
 edit("finally{bypass=false}try{window.pos789AutomaticSync?.(false)}catch(e){}});", "finally{bypass=false}requestAnimationFrame(()=>setTimeout(()=>{try{window.pos789AutomaticSync?.(false)}catch(e){}},0));});")
+edit("let profit=kind==='sales'?`<div class=\"line\"><span><b>الربح</b>", "let profit=kind==='sales'&&!pos391Private?`<div class=\"line\"><span><b>الربح</b>")
+edit("+accLine('هامش الربح',margin.toFixed(2).replace(/\\.00$/,'')+'%')", "+(pos391Private?'':accLine('هامش الربح',margin.toFixed(2).replace(/\\.00$/,'')+'%'))")
+edit("if(q.includes('صندوق')||q.includes('نقد')||q.includes('كاش')||q.includes('حركه')){let rows=ledger", "if(q.includes('صندوق')||q.includes('نقد')||q.includes('كاش')||q.includes('حركه')){if(pos391Private)return pos391Blocked();let rows=ledger")
 # Attach the privacy state before the app constructs its pages.
 at=s.index('<script')
 s=s[:at]+'<script id="pos391-privacy">\n'+(Path(__file__).parent/'privacy.js').read_text()+'</script>\n'+s[at:]
