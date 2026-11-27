@@ -1,0 +1,11 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const h=fs.readFileSync(process.argv[2],'utf8');
+const start=h.indexOf('/* POS7 R352'),end=h.indexOf('/* R354: integrated',start);
+vm.runInThisContext(h.slice(start,end));
+vm.runInThisContext(fs.readFileSync('pos7-release-audit/r384/prepare.js','utf8'));
+const p=(id,barcode,stock=0)=>({id,barcode,name:barcode,stock,stock_revision:0,stock_revision_untrusted:false});
+const b={app:'POS7',data:{products:[p(1,'123'),p(1,'124'),p('bad','125',-1),p('referenced','126',0.5),p(5,'0127'),p(6,'127')],sales:[],purchases:[],salesReturns:[],customerPayments:[],supplierPayments:[],marker:{productId:'referenced'}}};
+const frozen=JSON.stringify(b),r=pos7R384PrepareBackup(b,POS7DataDoctorR351.run(b));
+assert.equal(JSON.stringify(b),frozen);assert.equal(r.report.identityRepairs.length,1);assert.equal(r.report.invalidRepairs.length,1);assert.equal(r.report.invalidBlocked.length,1);assert.equal(r.report.remaining.barcodeGroups,1);assert.equal(r.report.readyForOriginalRestore,false);assert(r.candidate.pos7R354ExternalIdentityReviewRequired);assert.deepEqual(r.candidate.data.products.map(x=>x.stock),b.data.products.map(x=>x.stock));assert(Object.values(r.report.invariants).every(Boolean));
+const clean={app:'POS7',data:{products:[p(1,'123')],sales:[],purchases:[],salesReturns:[]}};assert(pos7R384PrepareBackup(clean,POS7DataDoctorR351.run(clean)).report.readyForOriginalRestore);
+console.log('R384 offline preparation tests passed');
