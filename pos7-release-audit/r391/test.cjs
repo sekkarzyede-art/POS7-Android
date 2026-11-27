@@ -1,0 +1,38 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const [old,next]=process.argv.slice(2).map(path=>fs.readFileSync(path,'utf8'));
+const js=next.split('<script id="pos391-privacy">')[1].split('</script>')[0];
+let prompts=0,pin='0000',stored=null;
+const button={textContent:'',setAttribute(){}},root={classList:{toggle(){}}};
+const c=vm.createContext({document:{documentElement:root,getElementById:k=>k==='pos391PrivacyToggle'?button:null,querySelectorAll:()=>[],addEventListener(){}},localStorage:{getItem:()=>stored,setItem:(_,v)=>stored=v},window:{},toast(){},prompt(){prompts++;return pin}});
+vm.runInContext(js,c);
+assert.equal(button.textContent,'OFF');
+vm.runInContext('pos391TogglePrivacy()',c);
+assert.equal(button.textContent,'OFF');
+pin='1212';vm.runInContext('pos391TogglePrivacy()',c);
+assert.equal(button.textContent,'ON');
+assert.equal(stored,'on');
+assert.equal(vm.runInContext("pos391AllowsReport('profit-supplier-all')",c),false);
+assert.equal(vm.runInContext("pos391AllowsReport('sale-all')",c),true);
+assert.equal(vm.runInContext("pos391BlockedPages.has('backupPage')&&pos391BlockedPages.has('ownerWalletPage')",c),true);
+vm.runInContext('pos391TogglePrivacy()',c);
+assert.equal(prompts,2);
+assert.equal(button.textContent,'OFF');
+const data={acc:'cashier_usd',name:'A',currency:'USD',f:'2026-11-27',t:'2026-11-27',priorRows:[{date:'2026-11-26',ref:'old-1',amount:10}],period:[{date:'2026-11-27',ref:'new-2',amount:5}],undatedRows:[],opening:0,priorNet:10,end:15,current:15,inAmt:5,outAmt:0,afterNet:0};
+function render(html){
+ const start=html.indexOf('window.pos286RenderCashReport=function(){'),end=html.indexOf('window.pos286UndatedSource=function',start);
+ let toggle;
+ const details={open:false,addEventListener:(_,cb)=>toggle=cb},prior={innerHTML:'',closest:()=>details};
+ const box={innerHTML:'',querySelector:()=>prior};
+ const globals={pos391Private:false,fillCashHistory:()=>{},window:{},document:{getElementById:()=>box},state:{mcLedger:[]},data:()=>data,N:Number,E:String,cashSource:()=> 'source',fmt:v=>Number(v).toFixed(2),dateLabel:String,Math};
+ vm.runInNewContext(html.slice(start,end),globals);
+ globals.window.pos286RenderCashReport();
+ return {box,prior,reveal(){details.open=true;toggle?.();}};
+}
+const a=render(old),b=render(next);
+assert(a.box.innerHTML.includes('old-1'));
+assert(!b.box.innerHTML.includes('old-1'));
+assert(b.box.innerHTML.includes('new-2'));
+assert.equal(b.prior.innerHTML,'');
+b.reveal();
+assert.equal(b.box.innerHTML.replace('<div id="pos391CashPriorBody"></div></details>',b.prior.innerHTML+'</details>'),a.box.innerHTML);
+console.log('Privacy activation, no PIN on switch-off, report gates and identical lazily prepared cash history verified');
