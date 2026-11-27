@@ -1,0 +1,90 @@
+[
+  [
+    "var KEY=\"POS7_V485_SESSION\",timer;function save(){",
+    "var KEY=\"POS7_V485_SESSION\",timer,lastSessionBody=null,lastSessionAt=0;function save(force){"
+  ],
+  [
+    "localStorage.setItem(KEY,JSON.stringify(o))}catch(e){}}\nwindow.pos485SaveSession=save;",
+    "var at=o.at;delete o.at;var body=JSON.stringify(o);if(force!==true&&body===lastSessionBody&&at-lastSessionAt<60000)return;o.at=at;localStorage.setItem(KEY,JSON.stringify(o));lastSessionBody=body;lastSessionAt=at}catch(e){}}\nwindow.pos485SaveSession=save;"
+  ],
+  [
+    "if(document.visibilityState===\"hidden\")save()});window.addEventListener(\"pagehide\",save);",
+    "if(document.visibilityState===\"hidden\")save(true)});window.addEventListener(\"pagehide\",function(){save(true)});"
+  ],
+  [
+    "let active=0,slots=[null,null,null],busy=false,ready=false,timer,storageWarned=false,manualDate=false;",
+    "let active=0,slots=[null,null,null],busy=false,ready=false,timer,storageWarned=false,manualDate=false,lastDraftBody=null,lastDraftRaw=null;"
+  ],
+  [
+    "function write(nextSlots=slots,nextActive=active){try{localStorage.setItem(KEY,JSON.stringify({schema:1,active:nextActive,slots:nextSlots,at:Date.now()}));storageWarned=false;return true}",
+    "function write(nextSlots=slots,nextActive=active){try{const payload={schema:1,active:nextActive,slots:nextSlots},body=JSON.stringify(payload);if(body===lastDraftBody&&localStorage.getItem(KEY)===lastDraftRaw){storageWarned=false;return true}const raw=JSON.stringify({...payload,at:Date.now()});localStorage.setItem(KEY,raw);lastDraftBody=body;lastDraftRaw=raw;storageWarned=false;return true}"
+  ],
+  [
+    "document.addEventListener('input',queue,true);document.addEventListener('change',queue,true);document.addEventListener('click',queue,true);window.addEventListener('pagehide',checkpoint);",
+    "function queueSaleEvent(e){if(el('sales')?.classList.contains('active')||e.target?.closest?.('#sales'))queue()}document.addEventListener('input',queueSaleEvent,true);document.addEventListener('change',queueSaleEvent,true);document.addEventListener('click',queueSaleEvent,true);window.addEventListener('pagehide',checkpoint);"
+  ],
+  [
+    "document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.getElementById(id).classList.add('active');let bn=document.querySelector('.bottom');if(bn)bn.style.display=id==='home'?'none':'flex';document.querySelectorAll('.nav').forEach(x=>x.classList.remove('active'));let map={home:0,sales:1,purchase:2,queries:3,stock:4};if(map[id]!=null&&document.querySelectorAll('.nav')[map[id]])document.querySelectorAll('.nav')[map[id]].classList.add('active');",
+    "const target=document.getElementById(id);if(!target)return false;document.querySelectorAll('.page.active').forEach(x=>{if(x!==target)x.classList.remove('active')});if(!target.classList.contains('active'))target.classList.add('active');let bn=document.querySelector('.bottom');if(bn){let display=id==='home'?'none':'flex';if(bn.style.display!==display)bn.style.display=display}let map={home:0,sales:1,purchase:2,queries:3,stock:4},navs=document.querySelectorAll('.nav'),next=map[id]!=null?navs[map[id]]:null;navs.forEach(x=>{if(x!==next&&x.classList.contains('active'))x.classList.remove('active')});if(next&&!next.classList.contains('active'))next.classList.add('active');"
+  ],
+  [
+    "let q=document.getElementById('accountantQuestion');if(q)q.focus({preventScroll:true})",
+    "let q=document.getElementById('accountantQuestion');if(q&&document.getElementById('queries')?.classList.contains('active'))q.focus({preventScroll:true})"
+  ],
+  [
+    "let s=document.getElementById('search');if(s){s.focus({preventScroll:true});try{s.select()}catch(e){}}",
+    "let s=document.getElementById('search');if(s&&document.getElementById('sales')?.classList.contains('active')){s.focus({preventScroll:true});try{s.select()}catch(e){}}"
+  ],
+  [
+    "let s=document.getElementById('pSearch');if(s){s.focus({preventScroll:true});try{s.select()}catch(e){}}",
+    "let s=document.getElementById('pSearch');if(s&&document.getElementById('purchase')?.classList.contains('active')){s.focus({preventScroll:true});try{s.select()}catch(e){}}"
+  ],
+  [
+    "openPage=function(){var r=previousOpenPage.apply(this,arguments);refreshPurchaseSummary();return r};",
+    "openPage=function(){var r=previousOpenPage.apply(this,arguments);if(document.getElementById('purchase')?.classList.contains('active'))refreshPurchaseSummary();return r};"
+  ],
+  [
+    "const open=window.openPage;window.openPage=openPage=function(){const r=open.apply(this,arguments);pos178MountDate();return r};",
+    "const open=window.openPage;window.openPage=openPage=function(){const r=open.apply(this,arguments);if(document.getElementById('sales')?.classList.contains('active'))pos178MountDate();return r};"
+  ],
+  [
+    "try{if(id&&document.getElementById(id))localStorage.setItem(\"POS7_ACTIVE_PAGE_V482\",id)}catch(e){}",
+    "try{if(id&&document.getElementById(id)&&localStorage.getItem(\"POS7_ACTIVE_PAGE_V482\")!==id)localStorage.setItem(\"POS7_ACTIVE_PAGE_V482\",id)}catch(e){}"
+  ],
+  [
+    "function syncScroll(){var compact=(window.scrollY||window.pageYOffset||0)>36;header.classList.toggle(\"pos7-v485-compact\",compact);document.body.classList.toggle(\"pos7-v485-compact\",compact);pinIdentity()}",
+    "var r378ScrollFrame=0;function syncScroll(){var compact=(window.scrollY||window.pageYOffset||0)>36;if(header.classList.contains(\"pos7-v485-compact\")===compact&&document.body.classList.contains(\"pos7-v485-compact\")===compact)return;header.classList.toggle(\"pos7-v485-compact\",compact);document.body.classList.toggle(\"pos7-v485-compact\",compact);pinIdentity()} function r378ScheduleHeader(){if(r378ScrollFrame)return;r378ScrollFrame=requestAnimationFrame(function(){r378ScrollFrame=0;syncScroll()})}"
+  ],
+  [
+    "window.addEventListener(\"scroll\",syncScroll,{passive:true});",
+    "window.addEventListener(\"scroll\",r378ScheduleHeader,{passive:true});"
+  ],
+  [
+    "header.classList.remove(\"pos7-v485-header-hidden\");syncScroll()});",
+    "header.classList.remove(\"pos7-v485-header-hidden\");syncScroll();pinIdentity()});"
+  ],
+  [
+    "window.addEventListener('scroll',positionHeaderDueButton,{passive:true});",
+    "var r378DueFrame=0;window.addEventListener('scroll',function(){if(r378DueFrame)return;r378DueFrame=requestAnimationFrame(function(){r378DueFrame=0;positionHeaderDueButton()})},{passive:true});"
+  ],
+  [
+    "box.style.bottom=Math.round(covered>100?covered+8:66)+'px'",
+    "var next=Math.round(covered>100?covered+8:66)+'px';if(box.style.bottom!==next)box.style.bottom=next"
+  ],
+  [
+    "window.visualViewport.addEventListener('scroll',keyboardPosition)",
+    "window.visualViewport.addEventListener('scroll',keyboardPosition,{passive:true})"
+  ],
+  [
+    "root.style.setProperty('--pos7-sale-vv-height',Math.max(240,Math.round(h))+'px');",
+    "var vh=Math.max(240,Math.round(h))+'px';if(root.style.getPropertyValue('--pos7-sale-vv-height')!==vh)root.style.setProperty('--pos7-sale-vv-height',vh);"
+  ],
+  [
+    "root.style.setProperty('--pos7-sale-keyboard-inset',Math.round(inset)+'px');",
+    "var vi=Math.round(inset)+'px';if(root.style.getPropertyValue('--pos7-sale-keyboard-inset')!==vi)root.style.setProperty('--pos7-sale-keyboard-inset',vi);"
+  ],
+  [
+    "function viewport(){const v=window.visualViewport;document.documentElement.style.setProperty('--pos176-view-height',(v?v.height:window.innerHeight)+'px');document.documentElement.style.setProperty('--pos176-view-top',(v?v.offsetTop:0)+'px');}",
+    "function viewport(){const v=window.visualViewport,st=document.documentElement.style,h=(v?v.height:window.innerHeight)+'px',t=(v?v.offsetTop:0)+'px';if(st.getPropertyValue('--pos176-view-height')!==h)st.setProperty('--pos176-view-height',h);if(st.getPropertyValue('--pos176-view-top')!==t)st.setProperty('--pos176-view-top',t);}"
+  ]
+]
