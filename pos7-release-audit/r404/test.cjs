@@ -16,10 +16,10 @@ const native=html.slice(html.indexOf('window.pos404PrintNames='),html.indexOf('w
  await page.evaluate(()=>pos404DebtNames('customer'));
  assert.equal(await page.locator('#pos404NamesDialog li').count(),3);assert.equal(await page.locator('#pos404NamesDialog li b').count(),0);assert.equal(await page.evaluate(()=>calls.length),0);
  await page.getByRole('button',{name:'🖨️ طباعة Bluetooth',exact:true}).click();assert.equal(await page.evaluate(()=>calls.length),1);
- await page.getByRole('button',{name:'إغلاق ×'}).click();assert.equal(await page.locator('#pos404NamesDialog').count(),0);
+ await page.getByRole('button',{name:'إغلاق ×'}).click();await page.locator('#pos404NamesDialog').waitFor({state:'detached'});assert.equal(await page.locator('#pos404NamesDialog').count(),0);
  await page.evaluate(()=>pos404DebtNames('supplier'));assert.equal(await page.locator('#pos404NamesDialog li').count(),2);
- await page.getByRole('button',{name:'إغلاق ×'}).click();await page.evaluate(()=>{pos265SupplierBalanceUSD=()=>0;pos404DebtNames('supplier')});assert(await page.getByRole('button',{name:'🖨️ طباعة Bluetooth',exact:true}).isDisabled());
- await page.getByRole('button',{name:'إغلاق ×'}).click();await page.evaluate(()=>{v250Can=()=>false;pos404DebtNames('customer')});assert.equal(await page.locator('#pos404NamesDialog').count(),0);
+ await page.getByRole('button',{name:'إغلاق ×'}).click();await page.locator('#pos404NamesDialog').waitFor({state:'detached'});await page.evaluate(()=>{pos265SupplierBalanceUSD=()=>0;pos404DebtNames('supplier')});assert(await page.getByRole('button',{name:'🖨️ طباعة Bluetooth',exact:true}).isDisabled());
+ await page.getByRole('button',{name:'إغلاق ×'}).click();await page.locator('#pos404NamesDialog').waitFor({state:'detached'});await page.evaluate(()=>{v250Can=()=>false;pos404DebtNames('customer')});assert.equal(await page.locator('#pos404NamesDialog').count(),0);
  // Exercise native renderer with real canvas and existing raster encoding, stub only transport.
  const raster=html.slice(html.indexOf('function escPosBytes(canvas)'),html.indexOf('\n',html.indexOf('function escPosBytes(canvas)')));
  await page.addScriptTag({content:`let btBusy=false;const read=()=>({paperDots:384,graphicsMode:'gs_v0'});let sent=[];async function pos7SendNativeBluetooth(bytes,title){sent.push({length:bytes.length,title,start:Array.from(bytes.slice(0,2)),end:Array.from(bytes.slice(-6))});return true;}window.Pos7Android={printBluetoothBase64(){},getSelectedBluetoothPrinterAddress(){return 'printer'}};${raster}\n${native}\nwindow.getSent=()=>sent;`});
