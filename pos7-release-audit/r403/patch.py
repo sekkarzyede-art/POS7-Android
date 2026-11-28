@@ -6,7 +6,8 @@ def put(a,b):
  assert s.count(a)==1,a[:100]
  s=s.replace(a,b,1)
 i=s.index('function voucherDate(');j=s.index('function commit(p,day)',i)
-helper=s[i:j]+'''function pos403PaymentDate(id){
+helper='''function pos403Today(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+'''+s[i:j].replace('window.pos178Today()', 'pos403Today()')+'''function pos403PaymentDate(id){
  try{return voucherDate(document.getElementById(id)?.value);}
  catch(e){toast(e.message);return null;}
 }
@@ -15,7 +16,7 @@ s=s[:i]+s[j:]
 s=s.replace('<head>','<head><script>\n'+helper+'</script>',1)
 for kind, rows, dateid in [('customer','pos163PayRows','pos403CustomerDate'),('supplier','pos168SupplierPayRows','pos403SupplierDate')]:
  tag='<div id="'+rows+'"></div>'
- put(tag,'<label for="'+dateid+'">تاريخ السند</label><input type="date" id="'+dateid+'" value="\'+window.pos178Today()+\'" max="\'+window.pos178Today()+\'" required>'+tag)
+ put(tag,'<label for="'+dateid+'">تاريخ السند</label><input type="date" id="'+dateid+'" value="\'+pos403Today()+\'" max="\'+pos403Today()+\'" required>'+tag)
 if True:
  i=s.index('  function commit(ps){\n    if(!selectedCustomer)')
  j=s.index('  window.cancelCustomerReceipt=',i)
