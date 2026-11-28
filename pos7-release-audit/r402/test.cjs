@@ -3,7 +3,7 @@ const s=fs.readFileSync(process.argv[2],'utf8');
 const c={window:{pos178Today:()=> '2026-11-28'},norm:String,state:{
  purchases:[{number:'p',date:'2026-11-27T10:00:00Z',items:[{productId:44,qty:5.5}]}],
  sales:[{date:'2026-11-28T10:00:00Z',items:[{id:44,qty:2}]},{cancelled:true,date:'2026-11-28T10:00:00Z',items:[{id:44,qty:999}]}],
- salesReturns:[{id:14,date:'2026-11-28T10:00:00Z',items:[{id:44,qty:.5}]}],
+ salesReturns:[{id:14,date:'2026-11-28T10:00:00Z',items:[{id:44,qty:.5},{id:44,qty:2,stockQty:0}]}],
  purchaseReturns:[{id:15,date:'2026-11-28T10:00:00Z',items:[{barcode:'٠١٢٣',qty:1}]}],
 }};
 vm.createContext(c);

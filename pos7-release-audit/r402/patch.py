@@ -18,7 +18,7 @@ chunk=chunk.replace('function commit(p){',r'''function voucherDate(day,now=new D
  const today=window.pos178Today();
  if(day===undefined||day===today)return now.toISOString();
  if(!/^\d{4}-\d{2}-\d{2}$/.test(day)||day>today)throw Error('اختر تاريخ اليوم أو تاريخًا سابقًا');
- const value=new Date(day+'T12:00:00');
+ const value=new Date(day+'T23:59:59.999');
  if(!Number.isFinite(+value)||value.getFullYear()!==Number(day.slice(0,4))||value.getMonth()+1!==Number(day.slice(5,7))||value.getDate()!==Number(day.slice(8,10)))throw Error('تاريخ السند غير صالح');
  return value.toISOString();
 }

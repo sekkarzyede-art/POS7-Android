@@ -412,7 +412,7 @@ jobs:
           html=r321-android/tab1/POS7_Tablet/app/src/main/assets/index.html
           python3 pos7-release-audit/r402/patch.py "$html" build
           node pos7-release-audit/r402/test.cjs "$html"
-          echo 'b3566d139c6d20d9088a5e479c81b533b8a322087914048e67d074c057ddce18  '"$html" | sha256sum -c -
+          echo '84e26ba2c4d57483da01854d1f9a620af1b74c8d75fe4d68c36d6ccbdaa85837  '"$html" | sha256sum -c -
       - name: Verify all candidate inline scripts
         run: |
           python3 - <<'PY'

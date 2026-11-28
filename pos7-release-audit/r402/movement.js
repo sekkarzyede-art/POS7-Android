@@ -18,7 +18,7 @@
     let qty=0;
     for(const line of doc.items||[]){
      if(!line||!matches(line))continue;
-     const amount=Number(line.qty??line.quantity);if(Number.isFinite(amount)&&amount>0)qty+=amount;
+     const amount=Number((isReturn?line.stockQty:null)??line.qty??line.quantity);if(Number.isFinite(amount)&&amount>0)qty+=amount;
     }
     if(qty>0)rows.push({ts,date:doc.date,label,ref,party:doc.customer||doc.supplier||'',incoming:incoming?qty:0,outgoing:incoming?0:qty});
    }
